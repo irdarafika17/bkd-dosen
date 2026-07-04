@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bkd-dosen-shell-v2';
+const CACHE_NAME = 'bkd-dosen-shell-v3';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -31,19 +31,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell: cache-first so the app opens instantly offline.
+  // Network-first: always try to get the latest version first.
+  // Falls back to cache only when offline (no internet).
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-            return response;
-          })
-          .catch(() => cached)
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
