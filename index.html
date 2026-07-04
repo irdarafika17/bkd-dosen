@@ -9,6 +9,8 @@
 <meta name="theme-color" content="#1E3A5F" />
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --navy:#1E3A5F;
@@ -697,6 +699,11 @@
 
           <section class="card">
             <h2>Rekap Kehadiran Semester</h2>
+            <div id="absensiExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportAbsensiExcelBtn">📊 Export Excel</button>
+              <button type="button" class="btn-outline" id="exportAbsensiWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportAbsensiPdfBtn">🖨️ Export PDF</button>
+            </div>
             <div id="absensiRekapWrap"></div>
           </section>
         </div>
@@ -780,6 +787,11 @@
 
           <section class="card">
             <h2>Rekap Nilai Keseluruhan</h2>
+            <div id="penilaianExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportPenilaianExcelBtn">📊 Export Excel</button>
+              <button type="button" class="btn-outline" id="exportPenilaianWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportPenilaianPdfBtn">🖨️ Export PDF</button>
+            </div>
             <div id="penilaianRekapWrap"></div>
           </section>
         </div>
@@ -2065,38 +2077,40 @@
     if(course) syncCourseMeta(course);
   }
 
-  function renderRekapKehadiran(){
+  function buildRekapKehadiranData(){
     const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
     const meetings = allMeetings.filter(m => m.courseId === activeAbsensiCourseId);
-    const wrap = $("absensiRekapWrap");
+    const totalMeetings = meetings.length;
+    const headers = ["Nama", "NIM", "Hadir", "Izin", "Sakit", "Alfa", "Nilai Kehadiran (%)"];
+    const rows = students.map(s => {
+      const records = allAttendance.filter(a => a.studentId === s.id && a.courseId === activeAbsensiCourseId);
+      const count = { Hadir: 0, Izin: 0, Sakit: 0, Alfa: 0 };
+      records.forEach(r => { if(count[r.status] !== undefined) count[r.status]++; });
+      const pct = totalMeetings > 0 ? Math.round((count.Hadir / totalMeetings) * 100) : 0;
+      return [s.nama, s.nim, count.Hadir, count.Izin, count.Sakit, count.Alfa, pct];
+    });
+    return { headers, rows, totalMeetings, hasData: students.length > 0 && meetings.length > 0 };
+  }
 
-    if(students.length === 0 || meetings.length === 0){
+  function renderRekapKehadiran(){
+    const wrap = $("absensiRekapWrap");
+    const { headers, rows, totalMeetings, hasData } = buildRekapKehadiranData();
+
+    if(!hasData){
       wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Rekap akan muncul setelah ada pertemuan dan daftar mahasiswa.</div>';
       return;
     }
 
-    const totalMeetings = meetings.length;
     wrap.innerHTML = `
       <table class="att-table">
-        <thead><tr><th>Nama</th><th>NIM</th><th>Hadir</th><th>Izin</th><th>Sakit</th><th>Alfa</th><th>Nilai Kehadiran</th></tr></thead>
+        <thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
         <tbody>
-          ${students.map(s => {
-            const records = allAttendance.filter(a => a.studentId === s.id && a.courseId === activeAbsensiCourseId);
-            const count = { Hadir: 0, Izin: 0, Sakit: 0, Alfa: 0 };
-            records.forEach(r => { if(count[r.status] !== undefined) count[r.status]++; });
-            const pct = totalMeetings > 0 ? Math.round((count.Hadir / totalMeetings) * 100) : 0;
-            return `
-              <tr>
-                <td>${escapeHtml(s.nama)}</td>
-                <td>${escapeHtml(s.nim)}</td>
-                <td>${count.Hadir}</td>
-                <td>${count.Izin}</td>
-                <td>${count.Sakit}</td>
-                <td>${count.Alfa}</td>
-                <td class="att-recap-pct">${pct}%</td>
-              </tr>
-            `;
-          }).join("")}
+          ${rows.map(r => `
+            <tr>
+              ${r.slice(0,6).map(c => `<td>${escapeHtml(String(c))}</td>`).join("")}
+              <td class="att-recap-pct">${r[6]}%</td>
+            </tr>
+          `).join("")}
         </tbody>
       </table>
       <p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Nilai Kehadiran = (jumlah Hadir ÷ total ${totalMeetings} pertemuan) × 100%</p>
@@ -2475,58 +2489,146 @@
   });
 
   // ---------- Rekap Nilai Keseluruhan (dengan pembobotan) ----------
-  function renderRekapPenilaian(){
-    const wrap = $("penilaianRekapWrap");
+  function buildRekapPenilaianData(){
     const students = allStudents.filter(s => s.courseId === activePenilaianCourseId);
     const activities = allAssessments.filter(a => a.courseId === activePenilaianCourseId);
+    const headers = ["Nama", ...activities.map(a => `${a.nama} (${a.jenis})`), "Nilai Akhir"];
+    const rows = students.map(st => {
+      const perActivity = activities.map(a => ({ jenis: a.jenis, total: computeStudentTotal(a, st.id) }));
+      const byJenis = {};
+      perActivity.forEach(p => {
+        if(!byJenis[p.jenis]) byJenis[p.jenis] = [];
+        byJenis[p.jenis].push(p.total);
+      });
+      let weightedSum = 0, weightUsed = 0;
+      Object.keys(byJenis).forEach(jenis => {
+        const cat = assessmentCategories.find(c => c.name === jenis);
+        const weight = cat ? cat.weight : 0;
+        const avg = byJenis[jenis].reduce((a,b) => a+b, 0) / byJenis[jenis].length;
+        weightedSum += avg * weight;
+        weightUsed += weight;
+      });
+      const nilaiAkhir = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
+      return [st.nama, ...perActivity.map(p => p.total), nilaiAkhir];
+    });
+    return { headers, rows, hasData: students.length > 0 && activities.length > 0 };
+  }
 
-    if(students.length === 0 || activities.length === 0){
+  function renderRekapPenilaian(){
+    const wrap = $("penilaianRekapWrap");
+    const { headers, rows, hasData } = buildRekapPenilaianData();
+
+    if(!hasData){
       wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Rekap akan muncul setelah ada ujian dan daftar mahasiswa.</div>';
       return;
     }
 
     wrap.innerHTML = `
       <table class="score-table">
-        <thead>
-          <tr>
-            <th>Nama</th>
-            ${activities.map(a => `<th>${escapeHtml(a.nama)}<br><span style="font-weight:400;color:var(--muted);">${escapeHtml(a.jenis)}</span></th>`).join("")}
-            <th>Nilai Akhir</th>
-          </tr>
-        </thead>
+        <thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
         <tbody>
-          ${students.map(st => {
-            const perActivity = activities.map(a => ({ jenis: a.jenis, total: computeStudentTotal(a, st.id) }));
-
-            const byJenis = {};
-            perActivity.forEach(p => {
-              if(!byJenis[p.jenis]) byJenis[p.jenis] = [];
-              byJenis[p.jenis].push(p.total);
-            });
-
-            let weightedSum = 0, weightUsed = 0;
-            Object.keys(byJenis).forEach(jenis => {
-              const cat = assessmentCategories.find(c => c.name === jenis);
-              const weight = cat ? cat.weight : 0;
-              const avg = byJenis[jenis].reduce((a,b) => a+b, 0) / byJenis[jenis].length;
-              weightedSum += avg * weight;
-              weightUsed += weight;
-            });
-            const nilaiAkhir = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
-
-            return `
-              <tr>
-                <td>${escapeHtml(st.nama)}</td>
-                ${perActivity.map(p => `<td>${p.total}</td>`).join("")}
-                <td class="total-cell">${nilaiAkhir}</td>
-              </tr>
-            `;
-          }).join("")}
+          ${rows.map(r => `
+            <tr>
+              <td>${escapeHtml(r[0])}</td>
+              ${r.slice(1,-1).map(c => `<td>${c}</td>`).join("")}
+              <td class="total-cell">${r[r.length-1]}</td>
+            </tr>
+          `).join("")}
         </tbody>
       </table>
       <p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Nilai Akhir = rata-rata nilai per jenis penilaian × bobot jenisnya (bobot dikelola di bagian atas halaman ini).</p>
     `;
   }
+
+  // ====================================================================
+  // ====== MODUL EXPORT (PDF / Word / Excel) ======
+  // ====================================================================
+
+  function downloadBlobAs(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportToExcel(filename, sheetName, headers, rows){
+    const aoa = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filename);
+  }
+
+  function exportToWord(filename, title, headers, rows){
+    const tableRows = rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #999;padding:6px;">${escapeHtml(String(c))}</td>`).join("")}</tr>`).join("");
+    const headHtml = `<tr>${headers.map(h => `<th style="border:1px solid #999;padding:6px;background:#1E3A5F;color:#fff;">${escapeHtml(h)}</th>`).join("")}</tr>`;
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
+      <body>
+        <h2>${escapeHtml(title)}</h2>
+        <table style="border-collapse:collapse;font-family:sans-serif;font-size:12px;">${headHtml}${tableRows}</table>
+      </body></html>
+    `;
+    const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+    downloadBlobAs(blob, filename);
+  }
+
+  function exportToPDF(filename, title, headers, rows){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: headers.length > 6 ? "landscape" : "portrait" });
+    doc.setFontSize(13);
+    doc.text(title, 14, 15);
+    doc.autoTable({
+      head: [headers],
+      body: rows,
+      startY: 22,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [30, 58, 95] }
+    });
+    doc.save(filename);
+  }
+
+  // ---------- Wiring tombol export Absensi ----------
+  $("exportAbsensiExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapKehadiranData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    exportToExcel(`Rekap_Absensi_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.xlsx`, "Rekap Absensi", headers, rows);
+  });
+  $("exportAbsensiWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapKehadiranData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    exportToWord(`Rekap_Absensi_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.doc`, `Rekap Kehadiran — ${course?.nama||""}`, headers, rows);
+  });
+  $("exportAbsensiPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapKehadiranData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    exportToPDF(`Rekap_Absensi_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.pdf`, `Rekap Kehadiran — ${course?.nama||""}`, headers, rows);
+  });
+
+  // ---------- Wiring tombol export Penilaian ----------
+  $("exportPenilaianExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapPenilaianData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activePenilaianCourseId);
+    exportToExcel(`Rekap_Nilai_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.xlsx`, "Rekap Nilai", headers, rows);
+  });
+  $("exportPenilaianWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapPenilaianData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activePenilaianCourseId);
+    exportToWord(`Rekap_Nilai_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.doc`, `Rekap Nilai — ${course?.nama||""}`, headers, rows);
+  });
+  $("exportPenilaianPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildRekapPenilaianData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === activePenilaianCourseId);
+    exportToPDF(`Rekap_Nilai_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.pdf`, `Rekap Nilai — ${course?.nama||""}`, headers, rows);
+  });
 
   // ====================================================================
 
