@@ -138,7 +138,7 @@
 
   /* ---------- Layout ---------- */
   main{
-    max-width:920px;
+    max-width:1140px;
     margin:0 auto;
     padding:24px 20px 60px;
   }
@@ -250,20 +250,50 @@
   .category-add-row button{flex-shrink:0;}
   .category-empty{font-size:12.5px;color:var(--muted);}
 
-  /* ---------- Tabs ---------- */
-  .tabnav{
-    display:flex;gap:6px;margin-bottom:18px;
-    border-bottom:1px solid var(--line);
+  /* ---------- Sidebar layout ---------- */
+  .app-shell{
+    display:flex;
+    align-items:flex-start;
+    gap:20px;
   }
-  .tab-btn{
-    background:transparent;color:var(--muted);
-    padding:10px 4px;margin-right:18px;
-    border-radius:0;border-bottom:2px solid transparent;
-    font-size:14px;
+  .sidebar{
+    width:210px;
+    flex-shrink:0;
+    background:var(--navy);
+    border-radius:var(--radius);
+    padding:14px 10px;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    position:sticky;
+    top:86px;
   }
-  .tab-btn.active{color:var(--navy);border-bottom-color:var(--teal);}
-  .tab-btn:hover:not(.active){color:var(--ink);}
+  .sidebar-label{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:0.6px;
+    color:#8AA0B8;padding:4px 10px 8px;
+  }
+  .sidebar-item{
+    display:flex;align-items:center;gap:9px;
+    background:transparent;color:#CBD7E3;
+    text-align:left;font-size:13.5px;font-weight:600;
+    padding:10px 10px;border-radius:7px;
+    width:100%;
+  }
+  .sidebar-item:hover:not(.active){background:rgba(255,255,255,0.06);color:#fff;}
+  .sidebar-item.active{background:rgba(255,255,255,0.12);color:#fff;}
+  .sidebar-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .content-area{flex:1;min-width:0;}
   .tab-panel.hidden{display:none;}
+
+  @media (max-width:760px){
+    .app-shell{flex-direction:column;gap:12px;}
+    .sidebar{
+      width:100%;flex-direction:row;overflow-x:auto;
+      position:static;gap:6px;padding:10px;
+    }
+    .sidebar-label{display:none;}
+    .sidebar-item{width:auto;white-space:nowrap;padding:8px 12px;}
+  }
 
   /* ---------- Course cards ---------- */
   .course-grid{
@@ -325,6 +355,21 @@
     text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);
   }
   .student-table th{color:var(--navy);font-size:11.5px;text-transform:uppercase;letter-spacing:0.3px;}
+
+  /* ---------- Attendance table ---------- */
+  .att-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .att-table th, .att-table td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);}
+  .att-table th{color:var(--navy);font-size:11px;text-transform:uppercase;letter-spacing:0.3px;}
+  .att-status-group{display:flex;gap:4px;flex-wrap:wrap;}
+  .att-status-btn{
+    padding:5px 10px;font-size:11.5px;border-radius:6px;
+    background:var(--gray-badge);color:var(--gray-badge-ink);border:1px solid transparent;
+  }
+  .att-status-btn.sel-hadir.active{background:#CCFBF1;color:#0F766E;border-color:#0F766E;}
+  .att-status-btn.sel-izin.active{background:#DBEAFE;color:#1D4ED8;border-color:#1D4ED8;}
+  .att-status-btn.sel-sakit.active{background:#FEF3C7;color:#B45309;border-color:#B45309;}
+  .att-status-btn.sel-alfa.active{background:#FEE2E2;color:#B42318;border-color:#B42318;}
+  .att-recap-pct{font-weight:700;}
 
   /* ---------- Filters ---------- */
   .filters{
@@ -436,10 +481,21 @@
 
   <div id="appBody" class="hidden">
 
-    <div class="tabnav" id="tabNav">
-      <button type="button" class="tab-btn active" data-tab="dokumen">Dokumen BKD</button>
-      <button type="button" class="tab-btn" data-tab="matakuliah">Mata Kuliah</button>
-    </div>
+    <div class="app-shell">
+      <nav class="sidebar" id="tabNav">
+        <div class="sidebar-label">Menu</div>
+        <button type="button" class="sidebar-item active" data-tab="dokumen">
+          <span class="sidebar-dot" style="background:#2DD4BF;"></span>Dokumen BKD
+        </button>
+        <button type="button" class="sidebar-item" data-tab="matakuliah">
+          <span class="sidebar-dot" style="background:#60A5FA;"></span>Mata Kuliah
+        </button>
+        <button type="button" class="sidebar-item" data-tab="absensi">
+          <span class="sidebar-dot" style="background:#FBBF24;"></span>Absensi
+        </button>
+      </nav>
+
+      <div class="content-area">
 
     <div id="panel-dokumen" class="tab-panel">
 
@@ -596,6 +652,48 @@
 
     </div>
 
+    <div id="panel-absensi" class="tab-panel hidden">
+
+      <section class="card">
+        <h2>Pilih Mata Kuliah</h2>
+        <select id="absensiCourseSelect">
+          <option value="">Pilih mata kuliah…</option>
+        </select>
+      </section>
+
+      <div id="absensiContent" class="hidden">
+
+        <div id="absensiListView">
+          <section class="card">
+            <h2>Sesi Pertemuan</h2>
+            <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Klik salah satu pertemuan untuk mengisi absensi. Pertemuan diambil dari daftar Pertemuan di tab Mata Kuliah.</p>
+            <div id="absensiMeetingList" class="doc-list"></div>
+            <div id="absensiMeetingEmpty" class="empty-state hidden">Belum ada pertemuan untuk mata kuliah ini. Tambahkan dulu di tab Mata Kuliah.</div>
+          </section>
+
+          <section class="card">
+            <h2>Rekap Kehadiran Semester</h2>
+            <div id="absensiRekapWrap"></div>
+          </section>
+        </div>
+
+        <div id="absensiFillView" class="hidden">
+          <button type="button" id="backToAbsensiList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke daftar pertemuan</button>
+          <section class="card">
+            <h2 id="absensiFillTitle">Absensi Pertemuan</h2>
+            <div id="absensiFillTableWrap"></div>
+          </section>
+        </div>
+
+      </div>
+
+      <div id="absensiEmptyCourse" class="empty-state">Pilih mata kuliah dulu untuk mengisi absensi.</div>
+
+    </div>
+
+      </div>
+    </div>
+
   </div>
 </main>
 
@@ -633,12 +731,13 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
   const COURSE_FILES_STORE = "course_files"; // RPS + materi/slide per pertemuan
   const STUDENTS_STORE = "students";
+  const ATTENDANCE_STORE = "attendance";
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
   const DEFAULT_CATEGORIES = [
@@ -665,7 +764,10 @@
   let allMeetings = [];
   let allCourseFiles = [];
   let allStudents = [];
+  let allAttendance = [];
   let activeCourseId = null;
+  let activeAbsensiCourseId = null;
+  let activeAbsensiMeetingId = null;
   let selectedRpsFile = null;
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
@@ -706,6 +808,11 @@
         if(!_db.objectStoreNames.contains(STUDENTS_STORE)){
           const s = _db.createObjectStore(STUDENTS_STORE, { keyPath: "id" });
           s.createIndex("courseId", "courseId", { unique:false });
+        }
+        if(!_db.objectStoreNames.contains(ATTENDANCE_STORE)){
+          const s = _db.createObjectStore(ATTENDANCE_STORE, { keyPath: "id" });
+          s.createIndex("courseId", "courseId", { unique:false });
+          s.createIndex("meetingId", "meetingId", { unique:false });
         }
       };
       req.onsuccess = (e) => resolve(e.target.result);
@@ -1024,6 +1131,7 @@
     allMeetings = await dbGetAll(MEETINGS_STORE);
     allCourseFiles = await dbGetAll(COURSE_FILES_STORE);
     allStudents = await dbGetAll(STUDENTS_STORE);
+    allAttendance = await dbGetAll(ATTENDANCE_STORE);
   }
 
   // ---------- Metadata sync (nama matkul, daftar pertemuan, daftar mahasiswa) ----------
@@ -1034,7 +1142,8 @@
       const payload = {
         course: { id: course.id, nama: course.nama, semester: course.semester, tahunAjaran: course.tahunAjaran },
         meetings: allMeetings.filter(m => m.courseId === course.id).map(m => ({ id: m.id, pertemuanKe: m.pertemuanKe, tanggal: m.tanggal })),
-        students: allStudents.filter(s => s.courseId === course.id)
+        students: allStudents.filter(s => s.courseId === course.id),
+        attendance: allAttendance.filter(a => a.courseId === course.id)
       };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
 
@@ -1102,6 +1211,14 @@
             allStudents.push(student);
           }
         }
+
+        for(const a of (payload.attendance || [])){
+          if(!allAttendance.some(x => x.id === a.id)){
+            const att = { ...a, courseId: course.id };
+            await dbPut(att, ATTENDANCE_STORE);
+            allAttendance.push(att);
+          }
+        }
       }
 
       // 2) File RPS & materi/slide yang belum ada lokal
@@ -1127,6 +1244,8 @@
 
       renderCourseList();
       if(activeCourseId){ renderRpsList(); renderMeetingList(); renderStudentTable(); }
+      renderAbsensiCourseOptions();
+      if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); }
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
       console.warn("pullMataKuliahFromDrive gagal", e);
@@ -1139,6 +1258,7 @@
     await dbPut(course, COURSES_STORE);
     allCourses.push(course);
     renderCourseList();
+    renderAbsensiCourseOptions();
     toast(`Mata kuliah "${nama}" ditambahkan`);
     syncCourseMeta(course);
   }
@@ -1147,12 +1267,13 @@
     const course = allCourses.find(c => c.id === id);
     if(!course) return;
     const meetingCount = allMeetings.filter(m => m.courseId === id).length;
-    const msg = `Hapus mata kuliah "${course.nama}"? Ini akan menghapus juga ${meetingCount} pertemuan, RPS, materi, dan daftar mahasiswanya (file yang sudah tersinkron ke Drive tetap ada di sana, hanya tidak lagi terhubung ke aplikasi ini).`;
+    const msg = `Hapus mata kuliah "${course.nama}"? Ini akan menghapus juga ${meetingCount} pertemuan, RPS, materi, absensi, dan daftar mahasiswanya (file yang sudah tersinkron ke Drive tetap ada di sana, hanya tidak lagi terhubung ke aplikasi ini).`;
     if(!confirm(msg)) return;
 
     const meetingsOfCourse = allMeetings.filter(m => m.courseId === id);
     const filesOfCourse = allCourseFiles.filter(f => f.courseId === id);
     const studentsOfCourse = allStudents.filter(s => s.courseId === id);
+    const attendanceOfCourse = allAttendance.filter(a => a.courseId === id);
 
     for(const f of filesOfCourse){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
@@ -1161,14 +1282,23 @@
     try{ if(course.metaDriveFileId && navigator.onLine){ await trashFileInDrive(course.metaDriveFileId); } }catch(e){}
     for(const m of meetingsOfCourse){ await dbDelete(m.id, MEETINGS_STORE); }
     for(const s of studentsOfCourse){ await dbDelete(s.id, STUDENTS_STORE); }
+    for(const a of attendanceOfCourse){ await dbDelete(a.id, ATTENDANCE_STORE); }
     await dbDelete(id, COURSES_STORE);
 
     allCourses = allCourses.filter(c => c.id !== id);
     allMeetings = allMeetings.filter(m => m.courseId !== id);
     allCourseFiles = allCourseFiles.filter(f => f.courseId !== id);
     allStudents = allStudents.filter(s => s.courseId !== id);
+    allAttendance = allAttendance.filter(a => a.courseId !== id);
 
     renderCourseList();
+    renderAbsensiCourseOptions();
+    if(activeAbsensiCourseId === id){
+      activeAbsensiCourseId = null;
+      $("absensiCourseSelect").value = "";
+      $("absensiContent").classList.add("hidden");
+      $("absensiEmptyCourse").classList.remove("hidden");
+    }
     toast("Mata kuliah dihapus");
   }
 
@@ -1395,17 +1525,21 @@
     toast(`Pertemuan ke-${ke} ditambahkan`);
     const course = allCourses.find(c => c.id === activeCourseId);
     if(course) syncCourseMeta(course);
+    if(activeAbsensiCourseId === activeCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); }
   });
 
   async function deleteMeeting(id){
     const meeting = allMeetings.find(m => m.id === id);
     if(!meeting) return;
-    if(!confirm(`Hapus Pertemuan ke-${meeting.pertemuanKe}? File di dalamnya juga akan terhapus.`)) return;
+    if(!confirm(`Hapus Pertemuan ke-${meeting.pertemuanKe}? File dan data absensi di dalamnya juga akan terhapus.`)) return;
     const files = allCourseFiles.filter(f => f.meetingId === id);
     for(const f of files){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
       await dbDelete(f.id, COURSE_FILES_STORE);
     }
+    const attOfMeeting = allAttendance.filter(a => a.meetingId === id);
+    for(const a of attOfMeeting){ await dbDelete(a.id, ATTENDANCE_STORE); }
+    allAttendance = allAttendance.filter(a => a.meetingId !== id);
     allCourseFiles = allCourseFiles.filter(f => f.meetingId !== id);
     await dbDelete(id, MEETINGS_STORE);
     allMeetings = allMeetings.filter(m => m.id !== id);
@@ -1414,6 +1548,7 @@
     toast("Pertemuan dihapus");
     const course = allCourses.find(c => c.id === meeting.courseId);
     if(course) syncCourseMeta(course);
+    if(activeAbsensiCourseId === meeting.courseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); }
   }
 
   $("meetingList").addEventListener("click", (e) => {
@@ -1602,16 +1737,201 @@
     studentInput.value = "";
   });
 
-  // ---------- Tab switching ----------
+  // ---------- Sidebar navigation ----------
   $("tabNav").addEventListener("click", (e) => {
-    const btn = e.target.closest(".tab-btn");
+    const btn = e.target.closest(".sidebar-item");
     if(!btn) return;
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".sidebar-item").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     const tab = btn.dataset.tab;
     $("panel-dokumen").classList.toggle("hidden", tab !== "dokumen");
     $("panel-matakuliah").classList.toggle("hidden", tab !== "matakuliah");
+    $("panel-absensi").classList.toggle("hidden", tab !== "absensi");
   });
+
+  // ====================================================================
+  // ====== MODUL ABSENSI ======
+  // ====================================================================
+
+  const ATT_STATUSES = [
+    { key: "Hadir", label: "Hadir", cls: "sel-hadir" },
+    { key: "Izin", label: "Izin", cls: "sel-izin" },
+    { key: "Sakit", label: "Sakit", cls: "sel-sakit" },
+    { key: "Alfa", label: "Alfa/Tidak Hadir", cls: "sel-alfa" }
+  ];
+
+  function renderAbsensiCourseOptions(){
+    const sel = $("absensiCourseSelect");
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Pilih mata kuliah…</option>' +
+      allCourses.map(c => `<option value="${c.id}">${escapeHtml(c.nama)} (${escapeHtml(c.semester)} ${escapeHtml(c.tahunAjaran)})</option>`).join("");
+    if(allCourses.some(c => c.id === current)) sel.value = current;
+  }
+
+  $("absensiCourseSelect").addEventListener("change", () => {
+    activeAbsensiCourseId = $("absensiCourseSelect").value || null;
+    if(!activeAbsensiCourseId){
+      $("absensiContent").classList.add("hidden");
+      $("absensiEmptyCourse").classList.remove("hidden");
+      return;
+    }
+    $("absensiEmptyCourse").classList.add("hidden");
+    $("absensiContent").classList.remove("hidden");
+    $("absensiListView").classList.remove("hidden");
+    $("absensiFillView").classList.add("hidden");
+    renderAbsensiMeetingList();
+    renderRekapKehadiran();
+  });
+
+  function renderAbsensiMeetingList(){
+    const meetings = allMeetings
+      .filter(m => m.courseId === activeAbsensiCourseId)
+      .sort((a,b) => Number(a.pertemuanKe) - Number(b.pertemuanKe));
+
+    if(meetings.length === 0){
+      $("absensiMeetingList").innerHTML = "";
+      $("absensiMeetingEmpty").classList.remove("hidden");
+      return;
+    }
+    $("absensiMeetingEmpty").classList.add("hidden");
+
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+
+    $("absensiMeetingList").innerHTML = meetings.map(m => {
+      const filled = allAttendance.filter(a => a.meetingId === m.id).length;
+      const total = students.length;
+      const badge = total > 0 && filled >= total
+        ? '<span class="badge synced">Sudah diisi</span>'
+        : `<span class="badge pending">${filled}/${total} terisi</span>`;
+      return `
+        <div class="doc-item" data-meeting="${m.id}" style="cursor:pointer;--tab-color:#0F766E;">
+          <div class="doc-main">
+            <div class="doc-name">Pertemuan ke-${escapeHtml(String(m.pertemuanKe))}</div>
+            <div class="doc-meta"><span>${escapeHtml(m.tanggal)}</span></div>
+            <div class="doc-badges">${badge}</div>
+          </div>
+          <div class="doc-actions">
+            <button class="icon-btn" data-action="fill-absensi" data-meeting="${m.id}">Isi Absensi</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  $("absensiMeetingList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action='fill-absensi']");
+    const row = e.target.closest(".doc-item[data-meeting]");
+    const meetingId = btn ? btn.dataset.meeting : (row ? row.dataset.meeting : null);
+    if(meetingId){ openAbsensiFill(meetingId); }
+  });
+
+  function openAbsensiFill(meetingId){
+    activeAbsensiMeetingId = meetingId;
+    const meeting = allMeetings.find(m => m.id === meetingId);
+    if(!meeting) return;
+    $("absensiListView").classList.add("hidden");
+    $("absensiFillView").classList.remove("hidden");
+    $("absensiFillTitle").textContent = `Absensi Pertemuan ke-${meeting.pertemuanKe} — ${meeting.tanggal}`;
+    renderAbsensiFillTable();
+  }
+
+  $("backToAbsensiList").addEventListener("click", () => {
+    activeAbsensiMeetingId = null;
+    $("absensiFillView").classList.add("hidden");
+    $("absensiListView").classList.remove("hidden");
+    renderAbsensiMeetingList();
+    renderRekapKehadiran();
+  });
+
+  function renderAbsensiFillTable(){
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+    const wrap = $("absensiFillTableWrap");
+    if(students.length === 0){
+      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada daftar mahasiswa untuk mata kuliah ini. Upload dulu di tab Mata Kuliah.</div>';
+      return;
+    }
+    wrap.innerHTML = `
+      <table class="att-table">
+        <thead><tr><th>Nama</th><th>NIM</th><th>Status</th></tr></thead>
+        <tbody>
+          ${students.map(s => {
+            const att = allAttendance.find(a => a.meetingId === activeAbsensiMeetingId && a.studentId === s.id);
+            const currentStatus = att ? att.status : "";
+            return `
+              <tr>
+                <td>${escapeHtml(s.nama)}</td>
+                <td>${escapeHtml(s.nim)}</td>
+                <td>
+                  <div class="att-status-group" data-student="${s.id}">
+                    ${ATT_STATUSES.map(st => `<button type="button" class="att-status-btn ${st.cls} ${currentStatus===st.key ? 'active':''}" data-status="${st.key}">${st.label}</button>`).join("")}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  $("absensiFillTableWrap").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".att-status-btn");
+    if(!btn) return;
+    const group = btn.closest(".att-status-group");
+    const studentId = group.dataset.student;
+    const status = btn.dataset.status;
+    await setAttendanceStatus(activeAbsensiMeetingId, studentId, status);
+    group.querySelectorAll(".att-status-btn").forEach(b => b.classList.toggle("active", b.dataset.status === status));
+  });
+
+  async function setAttendanceStatus(meetingId, studentId, status){
+    const id = `att_${meetingId}_${studentId}`;
+    const record = { id, meetingId, studentId, courseId: activeAbsensiCourseId, status };
+    await dbPut(record, ATTENDANCE_STORE);
+    const idx = allAttendance.findIndex(a => a.id === id);
+    if(idx > -1) allAttendance[idx] = record; else allAttendance.push(record);
+
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    if(course) syncCourseMeta(course);
+  }
+
+  function renderRekapKehadiran(){
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+    const meetings = allMeetings.filter(m => m.courseId === activeAbsensiCourseId);
+    const wrap = $("absensiRekapWrap");
+
+    if(students.length === 0 || meetings.length === 0){
+      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Rekap akan muncul setelah ada pertemuan dan daftar mahasiswa.</div>';
+      return;
+    }
+
+    const totalMeetings = meetings.length;
+    wrap.innerHTML = `
+      <table class="att-table">
+        <thead><tr><th>Nama</th><th>NIM</th><th>Hadir</th><th>Izin</th><th>Sakit</th><th>Alfa</th><th>Nilai Kehadiran</th></tr></thead>
+        <tbody>
+          ${students.map(s => {
+            const records = allAttendance.filter(a => a.studentId === s.id && a.courseId === activeAbsensiCourseId);
+            const count = { Hadir: 0, Izin: 0, Sakit: 0, Alfa: 0 };
+            records.forEach(r => { if(count[r.status] !== undefined) count[r.status]++; });
+            const pct = totalMeetings > 0 ? Math.round((count.Hadir / totalMeetings) * 100) : 0;
+            return `
+              <tr>
+                <td>${escapeHtml(s.nama)}</td>
+                <td>${escapeHtml(s.nim)}</td>
+                <td>${count.Hadir}</td>
+                <td>${count.Izin}</td>
+                <td>${count.Sakit}</td>
+                <td>${count.Alfa}</td>
+                <td class="att-recap-pct">${pct}%</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+      <p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Nilai Kehadiran = (jumlah Hadir ÷ total ${totalMeetings} pertemuan) × 100%</p>
+    `;
+  }
 
   // ====================================================================
 
@@ -1905,6 +2225,8 @@
 
     await loadCourseData();
     renderCourseList();
+    renderAbsensiCourseOptions();
+    $("absensiEmptyCourse").classList.remove("hidden");
 
     if(localStorage.getItem("bkd_has_logged_in") === "1"){
       $("loginCard").classList.add("hidden");
