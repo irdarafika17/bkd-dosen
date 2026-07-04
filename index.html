@@ -363,6 +363,20 @@
   }
   .student-table th{color:var(--navy);font-size:11.5px;text-transform:uppercase;letter-spacing:0.3px;}
 
+  /* ---------- Assessment category & score table ---------- */
+  .asscat-row{
+    display:flex;align-items:center;gap:10px;
+    padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+    background:#fff;margin-bottom:6px;
+  }
+  .asscat-row .asscat-name{flex:1;font-size:13px;font-weight:600;}
+  .asscat-row input[type=number]{max-width:80px;padding:6px 8px;}
+  .score-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .score-table th, .score-table td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;}
+  .score-table th{color:var(--navy);font-size:10.5px;text-transform:uppercase;}
+  .score-table input{width:80px;padding:5px 6px;font-size:12px;}
+  .score-table .total-cell{font-weight:700;color:var(--teal);}
+
   /* ---------- Attendance table ---------- */
   .att-table{width:100%;border-collapse:collapse;font-size:12.5px;}
   .att-table th, .att-table td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);}
@@ -499,6 +513,9 @@
         </button>
         <button type="button" class="sidebar-item" data-tab="absensi">
           <span class="sidebar-dot" style="background:#FBBF24;"></span>Absensi
+        </button>
+        <button type="button" class="sidebar-item" data-tab="penilaian">
+          <span class="sidebar-dot" style="background:#F472B6;"></span>Penilaian
         </button>
       </nav>
 
@@ -698,6 +715,119 @@
 
     </div>
 
+    <div id="panel-penilaian" class="tab-panel hidden">
+
+      <section class="card">
+        <h2>Kelola Jenis Penilaian & Bobot</h2>
+        <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Tambah jenis penilaian apapun (Tugas Makalah, Presentasi, UTS, UAS, dst) dan atur bobotnya untuk perhitungan Nilai Akhir. Total bobot idealnya 100%.</p>
+        <div id="assessmentCategoryTable"></div>
+        <div class="category-add-row" style="margin-top:10px;">
+          <input type="text" id="newAssessmentCatName" placeholder="Nama jenis penilaian baru…" />
+          <input type="number" id="newAssessmentCatWeight" placeholder="Bobot %" style="max-width:110px;" min="0" max="100" />
+          <button type="button" id="addAssessmentCatBtn" class="btn-outline">+ Tambah Jenis</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Pilih Mata Kuliah</h2>
+        <select id="penilaianCourseSelect">
+          <option value="">Pilih mata kuliah…</option>
+        </select>
+      </section>
+
+      <div id="penilaianContent" class="hidden">
+
+        <div id="penilaianListView">
+          <section class="card">
+            <h2>Tambah Ujian / Penilaian</h2>
+            <form id="assessmentForm">
+              <div class="form-grid">
+                <div>
+                  <label for="assessmentJenis">Jenis Penilaian</label>
+                  <select id="assessmentJenis" required></select>
+                </div>
+                <div>
+                  <label for="assessmentNama">Nama Ujian</label>
+                  <input type="text" id="assessmentNama" placeholder="misal: UTS Ganjil 2026" required />
+                </div>
+                <div>
+                  <label for="assessmentTanggal">Tanggal</label>
+                  <input type="text" id="assessmentTanggal" placeholder="YYYY-MM-DD" required />
+                </div>
+                <div>
+                  <label for="assessmentSemester">Semester</label>
+                  <input type="text" id="assessmentSemester" placeholder="misal: Ganjil 2026/2027" />
+                </div>
+                <div class="full">
+                  <label for="assessmentMode">Mode Penilaian</label>
+                  <select id="assessmentMode">
+                    <option value="manual">Manual — saya isi nilai langsung per soal</option>
+                    <option value="otomatis">Otomatis — cocokkan jawaban mahasiswa dengan kunci jawaban</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-primary">+ Tambah Ujian</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Daftar Ujian / Penilaian</h2>
+            <div id="assessmentList" class="doc-list"></div>
+            <div id="assessmentEmptyState" class="empty-state hidden">Belum ada ujian/penilaian untuk mata kuliah ini.</div>
+          </section>
+
+          <section class="card">
+            <h2>Rekap Nilai Keseluruhan</h2>
+            <div id="penilaianRekapWrap"></div>
+          </section>
+        </div>
+
+        <div id="assessmentDetailView" class="hidden">
+          <button type="button" id="backToAssessmentList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke daftar ujian</button>
+
+          <section class="card">
+            <h2 id="assessmentDetailTitle">Ujian</h2>
+            <p id="assessmentDetailSub" style="font-size:12.5px;color:var(--muted);margin-top:-8px;"></p>
+          </section>
+
+          <section class="card">
+            <h2>Daftar Soal</h2>
+            <div id="soalList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+            <form id="soalForm">
+              <div class="form-grid">
+                <div class="full">
+                  <label for="soalTeks">Soal</label>
+                  <input type="text" id="soalTeks" placeholder="Tulis pertanyaan/soal…" required />
+                </div>
+                <div id="soalKunciWrap">
+                  <label for="soalKunci">Kunci Jawaban</label>
+                  <input type="text" id="soalKunci" placeholder="Jawaban yang benar" />
+                </div>
+                <div>
+                  <label for="soalMaxNilai">Nilai Maksimal Soal</label>
+                  <input type="number" id="soalMaxNilai" placeholder="misal: 10" value="10" min="0" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-primary">+ Tambah Soal</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Input Nilai Mahasiswa</h2>
+            <div id="scoreTableWrap"></div>
+          </section>
+        </div>
+
+      </div>
+
+      <div id="penilaianEmptyCourse" class="empty-state">Pilih mata kuliah dulu untuk mengelola penilaian.</div>
+
+    </div>
+
       </div>
     </div>
 
@@ -738,13 +868,14 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
   const COURSE_FILES_STORE = "course_files"; // RPS + materi/slide per pertemuan
   const STUDENTS_STORE = "students";
   const ATTENDANCE_STORE = "attendance";
+  const ASSESSMENTS_STORE = "assessments";
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
   const DEFAULT_CATEGORIES = [
@@ -772,9 +903,13 @@
   let allCourseFiles = [];
   let allStudents = [];
   let allAttendance = [];
+  let allAssessments = [];
   let activeCourseId = null;
   let activeAbsensiCourseId = null;
   let activeAbsensiMeetingId = null;
+  let activePenilaianCourseId = null;
+  let activeAssessmentId = null;
+  let assessmentCategories = [];
   let selectedRpsFile = null;
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
@@ -820,6 +955,10 @@
           const s = _db.createObjectStore(ATTENDANCE_STORE, { keyPath: "id" });
           s.createIndex("courseId", "courseId", { unique:false });
           s.createIndex("meetingId", "meetingId", { unique:false });
+        }
+        if(!_db.objectStoreNames.contains(ASSESSMENTS_STORE)){
+          const s = _db.createObjectStore(ASSESSMENTS_STORE, { keyPath: "id" });
+          s.createIndex("courseId", "courseId", { unique:false });
         }
       };
       req.onsuccess = (e) => resolve(e.target.result);
@@ -1139,6 +1278,7 @@
     allCourseFiles = await dbGetAll(COURSE_FILES_STORE);
     allStudents = await dbGetAll(STUDENTS_STORE);
     allAttendance = await dbGetAll(ATTENDANCE_STORE);
+    allAssessments = await dbGetAll(ASSESSMENTS_STORE);
   }
 
   // ---------- Metadata sync (nama matkul, daftar pertemuan, daftar mahasiswa) ----------
@@ -1150,7 +1290,8 @@
         course: { id: course.id, nama: course.nama, semester: course.semester, tahunAjaran: course.tahunAjaran },
         meetings: allMeetings.filter(m => m.courseId === course.id).map(m => ({ id: m.id, pertemuanKe: m.pertemuanKe, tanggal: m.tanggal })),
         students: allStudents.filter(s => s.courseId === course.id),
-        attendance: allAttendance.filter(a => a.courseId === course.id)
+        attendance: allAttendance.filter(a => a.courseId === course.id),
+        assessments: allAssessments.filter(a => a.courseId === course.id)
       };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
 
@@ -1226,6 +1367,14 @@
             allAttendance.push(att);
           }
         }
+
+        for(const asm of (payload.assessments || [])){
+          if(!allAssessments.some(x => x.id === asm.id)){
+            const record = { ...asm, courseId: course.id };
+            await dbPut(record, ASSESSMENTS_STORE);
+            allAssessments.push(record);
+          }
+        }
       }
 
       // 2) File RPS & materi/slide yang belum ada lokal
@@ -1253,6 +1402,8 @@
       if(activeCourseId){ renderRpsList(); renderMeetingList(); renderStudentTable(); }
       renderAbsensiCourseOptions();
       if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); }
+      renderPenilaianCourseOptions();
+      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
       console.warn("pullMataKuliahFromDrive gagal", e);
@@ -1266,6 +1417,7 @@
     allCourses.push(course);
     renderCourseList();
     renderAbsensiCourseOptions();
+    renderPenilaianCourseOptions();
     toast(`Mata kuliah "${nama}" ditambahkan`);
     syncCourseMeta(course);
   }
@@ -1274,13 +1426,14 @@
     const course = allCourses.find(c => c.id === id);
     if(!course) return;
     const meetingCount = allMeetings.filter(m => m.courseId === id).length;
-    const msg = `Hapus mata kuliah "${course.nama}"? Ini akan menghapus juga ${meetingCount} pertemuan, RPS, materi, absensi, dan daftar mahasiswanya (file yang sudah tersinkron ke Drive tetap ada di sana, hanya tidak lagi terhubung ke aplikasi ini).`;
+    const msg = `Hapus mata kuliah "${course.nama}"? Ini akan menghapus juga ${meetingCount} pertemuan, RPS, materi, absensi, penilaian, dan daftar mahasiswanya (file yang sudah tersinkron ke Drive tetap ada di sana, hanya tidak lagi terhubung ke aplikasi ini).`;
     if(!confirm(msg)) return;
 
     const meetingsOfCourse = allMeetings.filter(m => m.courseId === id);
     const filesOfCourse = allCourseFiles.filter(f => f.courseId === id);
     const studentsOfCourse = allStudents.filter(s => s.courseId === id);
     const attendanceOfCourse = allAttendance.filter(a => a.courseId === id);
+    const assessmentsOfCourse = allAssessments.filter(a => a.courseId === id);
 
     for(const f of filesOfCourse){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
@@ -1290,6 +1443,7 @@
     for(const m of meetingsOfCourse){ await dbDelete(m.id, MEETINGS_STORE); }
     for(const s of studentsOfCourse){ await dbDelete(s.id, STUDENTS_STORE); }
     for(const a of attendanceOfCourse){ await dbDelete(a.id, ATTENDANCE_STORE); }
+    for(const a of assessmentsOfCourse){ await dbDelete(a.id, ASSESSMENTS_STORE); }
     await dbDelete(id, COURSES_STORE);
 
     allCourses = allCourses.filter(c => c.id !== id);
@@ -1297,14 +1451,22 @@
     allCourseFiles = allCourseFiles.filter(f => f.courseId !== id);
     allStudents = allStudents.filter(s => s.courseId !== id);
     allAttendance = allAttendance.filter(a => a.courseId !== id);
+    allAssessments = allAssessments.filter(a => a.courseId !== id);
 
     renderCourseList();
     renderAbsensiCourseOptions();
+    renderPenilaianCourseOptions();
     if(activeAbsensiCourseId === id){
       activeAbsensiCourseId = null;
       $("absensiCourseSelect").value = "";
       $("absensiContent").classList.add("hidden");
       $("absensiEmptyCourse").classList.remove("hidden");
+    }
+    if(activePenilaianCourseId === id){
+      activePenilaianCourseId = null;
+      $("penilaianCourseSelect").value = "";
+      $("penilaianContent").classList.add("hidden");
+      $("penilaianEmptyCourse").classList.remove("hidden");
     }
     toast("Mata kuliah dihapus");
   }
@@ -1754,6 +1916,7 @@
     $("panel-dokumen").classList.toggle("hidden", tab !== "dokumen");
     $("panel-matakuliah").classList.toggle("hidden", tab !== "matakuliah");
     $("panel-absensi").classList.toggle("hidden", tab !== "absensi");
+    $("panel-penilaian").classList.toggle("hidden", tab !== "penilaian");
   });
 
   // ====================================================================
@@ -1937,6 +2100,431 @@
         </tbody>
       </table>
       <p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Nilai Kehadiran = (jumlah Hadir ÷ total ${totalMeetings} pertemuan) × 100%</p>
+    `;
+  }
+
+  // ====================================================================
+  // ====== MODUL PENILAIAN ======
+  // ====================================================================
+
+  const ASSESSMENT_CAT_KEY = "bkd_assessment_categories";
+  const DEFAULT_ASSESSMENT_CATEGORIES = [
+    { name: "Tugas", weight: 30 },
+    { name: "UTS", weight: 30 },
+    { name: "UAS", weight: 40 }
+  ];
+
+  function loadAssessmentCategories(){
+    try{
+      const raw = localStorage.getItem(ASSESSMENT_CAT_KEY);
+      if(raw){ assessmentCategories = JSON.parse(raw); return; }
+    }catch(e){}
+    assessmentCategories = DEFAULT_ASSESSMENT_CATEGORIES.slice();
+    saveAssessmentCategories();
+  }
+  function saveAssessmentCategories(){
+    localStorage.setItem(ASSESSMENT_CAT_KEY, JSON.stringify(assessmentCategories));
+  }
+  function renderAssessmentCategoryTable(){
+    const el = $("assessmentCategoryTable");
+    if(assessmentCategories.length === 0){
+      el.innerHTML = '<div class="category-empty">Belum ada jenis penilaian. Tambahkan di bawah.</div>';
+    } else {
+      el.innerHTML = assessmentCategories.map(c => `
+        <div class="asscat-row" data-name="${escapeHtml(c.name)}">
+          <span class="asscat-name">${escapeHtml(c.name)}</span>
+          <input type="number" class="asscat-weight-input" data-name="${escapeHtml(c.name)}" value="${c.weight}" min="0" max="100" /> %
+          <button type="button" class="icon-btn asscat-remove" data-name="${escapeHtml(c.name)}" style="color:var(--danger);">Hapus</button>
+        </div>
+      `).join("");
+    }
+    renderAssessmentJenisOptions();
+  }
+  function renderAssessmentJenisOptions(){
+    const sel = $("assessmentJenis");
+    if(!sel) return;
+    const current = sel.value;
+    sel.innerHTML = assessmentCategories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${c.weight}%)</option>`).join("");
+    if(assessmentCategories.some(c => c.name === current)) sel.value = current;
+  }
+
+  $("addAssessmentCatBtn").addEventListener("click", () => {
+    const name = $("newAssessmentCatName").value.trim();
+    const weight = Number($("newAssessmentCatWeight").value) || 0;
+    if(!name){ toast("Nama jenis penilaian tidak boleh kosong"); return; }
+    if(assessmentCategories.some(c => c.name.toLowerCase() === name.toLowerCase())){
+      toast("Jenis penilaian itu sudah ada"); return;
+    }
+    assessmentCategories.push({ name, weight });
+    saveAssessmentCategories();
+    renderAssessmentCategoryTable();
+    $("newAssessmentCatName").value = "";
+    $("newAssessmentCatWeight").value = "";
+    toast(`Jenis "${name}" ditambahkan`);
+  });
+
+  $("assessmentCategoryTable").addEventListener("click", (e) => {
+    const btn = e.target.closest(".asscat-remove");
+    if(!btn) return;
+    const name = btn.dataset.name;
+    const used = allAssessments.filter(a => a.jenis === name).length;
+    const msg = used > 0
+      ? `Hapus jenis "${name}"? Ada ${used} ujian yang masih memakainya — ujiannya tidak akan terhapus, hanya kategorinya tidak muncul lagi untuk pilihan baru.`
+      : `Hapus jenis "${name}"?`;
+    if(!confirm(msg)) return;
+    assessmentCategories = assessmentCategories.filter(c => c.name !== name);
+    saveAssessmentCategories();
+    renderAssessmentCategoryTable();
+    toast(`Jenis "${name}" dihapus`);
+  });
+
+  $("assessmentCategoryTable").addEventListener("change", (e) => {
+    const input = e.target.closest(".asscat-weight-input");
+    if(!input) return;
+    const name = input.dataset.name;
+    const cat = assessmentCategories.find(c => c.name === name);
+    if(cat){ cat.weight = Number(input.value) || 0; saveAssessmentCategories(); }
+  });
+
+  // ---------- Course selection for Penilaian ----------
+  function renderPenilaianCourseOptions(){
+    const sel = $("penilaianCourseSelect");
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Pilih mata kuliah…</option>' +
+      allCourses.map(c => `<option value="${c.id}">${escapeHtml(c.nama)} (${escapeHtml(c.semester)} ${escapeHtml(c.tahunAjaran)})</option>`).join("");
+    if(allCourses.some(c => c.id === current)) sel.value = current;
+  }
+
+  $("penilaianCourseSelect").addEventListener("change", () => {
+    activePenilaianCourseId = $("penilaianCourseSelect").value || null;
+    if(!activePenilaianCourseId){
+      $("penilaianContent").classList.add("hidden");
+      $("penilaianEmptyCourse").classList.remove("hidden");
+      return;
+    }
+    $("penilaianEmptyCourse").classList.add("hidden");
+    $("penilaianContent").classList.remove("hidden");
+    $("penilaianListView").classList.remove("hidden");
+    $("assessmentDetailView").classList.add("hidden");
+    renderAssessmentList();
+    renderRekapPenilaian();
+  });
+
+  // ---------- Assessment (Ujian) CRUD ----------
+  $("assessmentForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const jenis = $("assessmentJenis").value;
+    const nama = $("assessmentNama").value.trim();
+    const tanggal = $("assessmentTanggal").value.trim();
+    const semester = $("assessmentSemester").value.trim();
+    const mode = $("assessmentMode").value;
+    if(!jenis || !nama || !tanggal){ toast("Lengkapi semua field wajib"); return; }
+    const record = {
+      id: uuid(), courseId: activePenilaianCourseId,
+      jenis, nama, tanggal, semester, mode,
+      soal: [], jawaban: {}
+    };
+    await dbPut(record, ASSESSMENTS_STORE);
+    allAssessments.push(record);
+    renderAssessmentList();
+    renderRekapPenilaian();
+    $("assessmentForm").reset();
+    toast(`Ujian "${nama}" ditambahkan`);
+    const course = allCourses.find(c => c.id === activePenilaianCourseId);
+    if(course) syncCourseMeta(course);
+  });
+
+  function renderAssessmentList(){
+    const items = allAssessments.filter(a => a.courseId === activePenilaianCourseId)
+      .sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
+    if(items.length === 0){
+      $("assessmentList").innerHTML = "";
+      $("assessmentEmptyState").classList.remove("hidden");
+      return;
+    }
+    $("assessmentEmptyState").classList.add("hidden");
+    $("assessmentList").innerHTML = items.map(a => {
+      const cat = assessmentCategories.find(c => c.name === a.jenis);
+      const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
+      return `
+        <div class="doc-item" style="--tab-color:#F472B6;">
+          <div class="doc-main">
+            <div class="doc-name">${escapeHtml(a.nama)}</div>
+            <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
+            <div class="doc-badges">
+              <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
+              <span class="badge synced">${modeLabel}</span>
+              <span class="badge pending">${a.soal.length} soal</span>
+            </div>
+          </div>
+          <div class="doc-actions">
+            <button class="icon-btn" data-action="open-assessment" data-id="${a.id}">Kelola Soal &amp; Nilai</button>
+            <button class="icon-btn" data-action="delete-assessment" data-id="${a.id}" style="color:var(--danger)">Hapus</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  $("assessmentList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    if(btn.dataset.action === "open-assessment"){ openAssessmentDetail(btn.dataset.id); }
+    if(btn.dataset.action === "delete-assessment"){ deleteAssessment(btn.dataset.id); }
+  });
+
+  async function deleteAssessment(id){
+    const a = allAssessments.find(x => x.id === id);
+    if(!a) return;
+    if(!confirm(`Hapus ujian "${a.nama}"? Semua soal dan nilai di dalamnya juga akan terhapus.`)) return;
+    await dbDelete(id, ASSESSMENTS_STORE);
+    allAssessments = allAssessments.filter(x => x.id !== id);
+    renderAssessmentList();
+    renderRekapPenilaian();
+    toast("Ujian dihapus");
+    const course = allCourses.find(c => c.id === a.courseId);
+    if(course) syncCourseMeta(course);
+  }
+
+  function openAssessmentDetail(id){
+    activeAssessmentId = id;
+    const a = allAssessments.find(x => x.id === id);
+    if(!a) return;
+    $("penilaianListView").classList.add("hidden");
+    $("assessmentDetailView").classList.remove("hidden");
+    $("assessmentDetailTitle").textContent = a.nama;
+    $("assessmentDetailSub").textContent = `${a.jenis} · ${a.tanggal}${a.semester ? " · " + a.semester : ""} · Mode: ${a.mode === "otomatis" ? "Otomatis" : "Manual"}`;
+    $("soalKunciWrap").classList.toggle("hidden", a.mode !== "otomatis");
+    renderSoalList();
+    renderScoreTable();
+  }
+
+  $("backToAssessmentList").addEventListener("click", () => {
+    activeAssessmentId = null;
+    $("assessmentDetailView").classList.add("hidden");
+    $("penilaianListView").classList.remove("hidden");
+    renderAssessmentList();
+    renderRekapPenilaian();
+  });
+
+  // ---------- Soal CRUD ----------
+  $("soalForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a) return;
+    const teks = $("soalTeks").value.trim();
+    const kunci = $("soalKunci").value.trim();
+    const maxNilai = Number($("soalMaxNilai").value) || 0;
+    if(!teks){ toast("Isi teks soal dulu"); return; }
+    a.soal.push({ id: uuid(), teks, kunci, maxNilai });
+    await dbPut(a, ASSESSMENTS_STORE);
+    renderSoalList();
+    renderScoreTable();
+    renderAssessmentList();
+    $("soalForm").reset();
+    $("soalMaxNilai").value = 10;
+    toast("Soal ditambahkan");
+    const course = allCourses.find(c => c.id === a.courseId);
+    if(course) syncCourseMeta(course);
+  });
+
+  function renderSoalList(){
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a){ $("soalList").innerHTML = ""; return; }
+    if(a.soal.length === 0){
+      $("soalList").innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada soal.</div>';
+      return;
+    }
+    $("soalList").innerHTML = a.soal.map((s, idx) => `
+      <div class="meeting-file-row" data-soalid="${s.id}">
+        <span class="mf-name">${idx+1}. ${escapeHtml(s.teks)} ${a.mode === "otomatis" ? `<span style="color:var(--muted);">(kunci: ${escapeHtml(s.kunci||"-")})</span>` : ""} — maks ${s.maxNilai}</span>
+        <span class="mf-actions">
+          <button class="icon-btn" data-action="delete-soal" data-soalid="${s.id}" style="color:var(--danger)">Hapus</button>
+        </span>
+      </div>
+    `).join("");
+  }
+
+  $("soalList").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action='delete-soal']");
+    if(!btn) return;
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a) return;
+    if(!confirm("Hapus soal ini? Nilai mahasiswa untuk soal ini juga akan terhapus.")) return;
+    a.soal = a.soal.filter(s => s.id !== btn.dataset.soalid);
+    for(const studentId in a.jawaban){
+      if(a.jawaban[studentId]) delete a.jawaban[studentId][btn.dataset.soalid];
+    }
+    await dbPut(a, ASSESSMENTS_STORE);
+    renderSoalList();
+    renderScoreTable();
+    renderAssessmentList();
+    toast("Soal dihapus");
+    const course = allCourses.find(c => c.id === a.courseId);
+    if(course) syncCourseMeta(course);
+  });
+
+  // ---------- Scoring ----------
+  function levenshtein(a, b){
+    a = a || ""; b = b || "";
+    const m = a.length, n = b.length;
+    if(m === 0) return n;
+    if(n === 0) return m;
+    const dp = Array.from({length: m+1}, () => new Array(n+1).fill(0));
+    for(let i=0;i<=m;i++) dp[i][0] = i;
+    for(let j=0;j<=n;j++) dp[0][j] = j;
+    for(let i=1;i<=m;i++){
+      for(let j=1;j<=n;j++){
+        dp[i][j] = a[i-1] === b[j-1]
+          ? dp[i-1][j-1]
+          : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+      }
+    }
+    return dp[m][n];
+  }
+  function textSimilarity(a, b){
+    const na = String(a||"").trim().toLowerCase();
+    const nb = String(b||"").trim().toLowerCase();
+    if(!na || !nb) return 0;
+    if(na === nb) return 1;
+    const dist = levenshtein(na, nb);
+    return 1 - dist / Math.max(na.length, nb.length);
+  }
+
+  function computeStudentTotal(activity, studentId){
+    let earned = 0, max = 0;
+    for(const soal of activity.soal){
+      const m = Number(soal.maxNilai) || 0;
+      max += m;
+      const cell = (activity.jawaban[studentId] || {})[soal.id];
+      if(activity.mode === "otomatis"){
+        const jawabanText = cell ? cell.jawaban : "";
+        if(jawabanText && jawabanText.trim() !== ""){
+          const sim = textSimilarity(jawabanText, soal.kunci);
+          if(sim >= 0.85) earned += m;
+          else if(sim >= 0.5) earned += m * 0.5;
+        }
+      } else {
+        earned += Number(cell ? cell.nilai : 0) || 0;
+      }
+    }
+    return max > 0 ? Math.round((earned / max) * 100) : 0;
+  }
+
+  function renderScoreTable(){
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    const wrap = $("scoreTableWrap");
+    if(!a) { wrap.innerHTML = ""; return; }
+    const students = allStudents.filter(s => s.courseId === a.courseId);
+    if(students.length === 0){
+      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada daftar mahasiswa untuk mata kuliah ini.</div>';
+      return;
+    }
+    if(a.soal.length === 0){
+      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Tambahkan soal dulu di atas sebelum mengisi nilai.</div>';
+      return;
+    }
+    const isOtomatis = a.mode === "otomatis";
+    wrap.innerHTML = `
+      <table class="score-table">
+        <thead>
+          <tr>
+            <th>Nama</th>
+            ${a.soal.map((s, idx) => `<th>Soal ${idx+1} (${s.maxNilai})</th>`).join("")}
+            <th>Total (0-100)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${students.map(st => {
+            const total = computeStudentTotal(a, st.id);
+            return `
+              <tr data-student="${st.id}">
+                <td>${escapeHtml(st.nama)}</td>
+                ${a.soal.map(s => {
+                  const cell = (a.jawaban[st.id] || {})[s.id] || {};
+                  const val = isOtomatis ? (cell.jawaban || "") : (cell.nilai != null ? cell.nilai : "");
+                  return `<td><input type="${isOtomatis ? "text" : "number"}" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(val))}" placeholder="${isOtomatis ? "jawaban" : "nilai"}" /></td>`;
+                }).join("")}
+                <td class="total-cell" data-total-for="${st.id}">${total}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  $("scoreTableWrap").addEventListener("change", async (e) => {
+    const input = e.target.closest("input[data-soal]");
+    if(!input) return;
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a) return;
+    const studentId = input.dataset.student;
+    const soalId = input.dataset.soal;
+    const field = a.mode === "otomatis" ? "jawaban" : "nilai";
+    if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
+    a.jawaban[studentId][soalId] = { ...a.jawaban[studentId][soalId], [field]: input.value };
+    await dbPut(a, ASSESSMENTS_STORE);
+
+    const totalCell = document.querySelector(`.total-cell[data-total-for="${studentId}"]`);
+    if(totalCell){ totalCell.textContent = computeStudentTotal(a, studentId); }
+    renderRekapPenilaian();
+
+    const course = allCourses.find(c => c.id === a.courseId);
+    if(course) syncCourseMeta(course);
+  });
+
+  // ---------- Rekap Nilai Keseluruhan (dengan pembobotan) ----------
+  function renderRekapPenilaian(){
+    const wrap = $("penilaianRekapWrap");
+    const students = allStudents.filter(s => s.courseId === activePenilaianCourseId);
+    const activities = allAssessments.filter(a => a.courseId === activePenilaianCourseId);
+
+    if(students.length === 0 || activities.length === 0){
+      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Rekap akan muncul setelah ada ujian dan daftar mahasiswa.</div>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="score-table">
+        <thead>
+          <tr>
+            <th>Nama</th>
+            ${activities.map(a => `<th>${escapeHtml(a.nama)}<br><span style="font-weight:400;color:var(--muted);">${escapeHtml(a.jenis)}</span></th>`).join("")}
+            <th>Nilai Akhir</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${students.map(st => {
+            const perActivity = activities.map(a => ({ jenis: a.jenis, total: computeStudentTotal(a, st.id) }));
+
+            const byJenis = {};
+            perActivity.forEach(p => {
+              if(!byJenis[p.jenis]) byJenis[p.jenis] = [];
+              byJenis[p.jenis].push(p.total);
+            });
+
+            let weightedSum = 0, weightUsed = 0;
+            Object.keys(byJenis).forEach(jenis => {
+              const cat = assessmentCategories.find(c => c.name === jenis);
+              const weight = cat ? cat.weight : 0;
+              const avg = byJenis[jenis].reduce((a,b) => a+b, 0) / byJenis[jenis].length;
+              weightedSum += avg * weight;
+              weightUsed += weight;
+            });
+            const nilaiAkhir = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
+
+            return `
+              <tr>
+                <td>${escapeHtml(st.nama)}</td>
+                ${perActivity.map(p => `<td>${p.total}</td>`).join("")}
+                <td class="total-cell">${nilaiAkhir}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+      <p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Nilai Akhir = rata-rata nilai per jenis penilaian × bobot jenisnya (bobot dikelola di bagian atas halaman ini).</p>
     `;
   }
 
@@ -2234,6 +2822,11 @@
     renderCourseList();
     renderAbsensiCourseOptions();
     $("absensiEmptyCourse").classList.remove("hidden");
+
+    loadAssessmentCategories();
+    renderAssessmentCategoryTable();
+    renderPenilaianCourseOptions();
+    $("penilaianEmptyCourse").classList.remove("hidden");
 
     if(localStorage.getItem("bkd_has_logged_in") === "1"){
       $("loginCard").classList.add("hidden");
