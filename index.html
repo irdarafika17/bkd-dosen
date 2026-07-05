@@ -428,6 +428,18 @@
   .score-table th.col-lampiran{left:110px;}
 
   .score-cell{display:flex;flex-direction:column;gap:4px;min-width:78px;}
+  .soal-item{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+    padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;
+  }
+  .soal-item-main{flex:1;min-width:0;}
+  .soal-item-teks{font-size:13.5px;line-height:1.5;}
+  .soal-item-maks{color:var(--muted);font-size:12px;font-weight:400;}
+  .soal-item-kunci{
+    margin-top:6px;font-size:12.5px;padding:7px 10px;
+    background:var(--teal-light);border-radius:6px;color:var(--teal);
+  }
+  .soal-kunci-label{font-weight:700;}
   .score-cell input{width:100%;}
   .answer-file-row{font-size:10.5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;white-space:normal;}
   .answer-file-row button{padding:3px 6px;font-size:10px;background:var(--gray-badge);color:var(--navy);}
@@ -891,6 +903,44 @@
           </section>
         </div>
 
+        <div id="assessmentDetailView" class="hidden">
+          <button type="button" id="backToAssessmentList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke Daftar Ujian</button>
+
+          <section class="card">
+            <h2 id="assessmentDetailTitle">Ujian</h2>
+            <p id="assessmentDetailSub" style="font-size:12.5px;color:var(--muted);margin-top:-8px;"></p>
+          </section>
+
+          <section class="card">
+            <h2>Daftar Soal</h2>
+            <div id="soalList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;"></div>
+            <form id="soalForm">
+              <div class="form-grid">
+                <div class="full">
+                  <label for="soalTeks">Soal</label>
+                  <input type="text" id="soalTeks" placeholder="Tulis pertanyaan/soal…" required />
+                </div>
+                <div id="soalKunciWrap">
+                  <label for="soalKunci">Kunci Jawaban</label>
+                  <input type="text" id="soalKunci" placeholder="Jawaban yang benar" />
+                </div>
+                <div>
+                  <label for="soalMaxNilai">Nilai Maksimal Soal</label>
+                  <input type="number" id="soalMaxNilai" placeholder="misal: 10" value="10" min="0" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-primary">+ Tambah Soal</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Input Nilai Mahasiswa</h2>
+            <div id="scoreTableWrap"></div>
+          </section>
+        </div>
+
       </div>
 
       <div id="penilaianEmptyCourse" class="empty-state">Pilih mata kuliah dulu untuk mengelola penilaian.</div>
@@ -912,7 +962,7 @@
       <div class="picked" id="materialPicked"></div>
     </div>
     <input type="file" id="materialInput" class="hidden" />
-    <input type="file" id="answerFileInput" class="hidden" />
+    <input type="file" id="answerFileInput" class="hidden" accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png" />
     <div style="margin-top:12px;">
       <label for="materialKind">Jenis File</label>
       <select id="materialKind">
@@ -1993,23 +2043,51 @@
 
   // ---------- Daftar Mahasiswa ----------
   const STUDENT_COLUMN_MAP = {
-    nama: ["nama", "name", "nama mahasiswa"],
+    nama: ["nama", "name"],
     nim: ["nim", "no induk", "npm"],
     jurusan: ["jurusan", "prodi", "program studi"],
     semester: ["semester"],
-    noHp: ["no hp", "no. hp", "nohp", "hp", "telepon", "no telepon", "whatsapp", "wa"]
+    noHp: ["no hp", "nohp", "hp", "telepon", "whatsapp", "wa"]
   };
+  function normalizeHeaderText(str){
+    return String(str || "")
+      .toLowerCase()
+      .replace(/[.\-_:]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
   function matchColumn(headerRow, keys){
     for(let i=0;i<headerRow.length;i++){
-      const h = String(headerRow[i] || "").trim().toLowerCase();
-      if(keys.includes(h)) return i;
+      const h = normalizeHeaderText(headerRow[i]);
+      if(!h) continue;
+      if(keys.some(k => h.includes(k))) return i;
     }
     return -1;
+  }
+  function scoreHeaderRow(row){
+    if(!row) return 0;
+    let score = 0;
+    if(matchColumn(row, STUDENT_COLUMN_MAP.nama) > -1) score++;
+    if(matchColumn(row, STUDENT_COLUMN_MAP.nim) > -1) score++;
+    if(matchColumn(row, STUDENT_COLUMN_MAP.jurusan) > -1) score++;
+    if(matchColumn(row, STUDENT_COLUMN_MAP.semester) > -1) score++;
+    if(matchColumn(row, STUDENT_COLUMN_MAP.noHp) > -1) score++;
+    return score;
+  }
+  function findHeaderRowIndex(rows){
+    let bestIdx = 0, bestScore = -1;
+    const scanLimit = Math.min(rows.length, 6);
+    for(let i=0;i<scanLimit;i++){
+      const score = scoreHeaderRow(rows[i]);
+      if(score > bestScore){ bestScore = score; bestIdx = i; }
+    }
+    return bestScore > 0 ? bestIdx : 0;
   }
 
   function parseStudentRows(rows){
     if(!rows || rows.length < 2) return [];
-    const header = rows[0];
+    const headerIdx = findHeaderRowIndex(rows);
+    const header = rows[headerIdx];
     const idx = {
       nama: matchColumn(header, STUDENT_COLUMN_MAP.nama),
       nim: matchColumn(header, STUDENT_COLUMN_MAP.nim),
@@ -2018,7 +2096,7 @@
       noHp: matchColumn(header, STUDENT_COLUMN_MAP.noHp)
     };
     const out = [];
-    for(let r=1;r<rows.length;r++){
+    for(let r=headerIdx+1;r<rows.length;r++){
       const row = rows[r];
       if(!row || row.every(c => c === undefined || String(c).trim() === "")) continue;
       out.push({
@@ -2706,6 +2784,7 @@
     $("penilaianEmptyCourse").classList.add("hidden");
     $("penilaianContent").classList.remove("hidden");
     $("penilaianListView").classList.remove("hidden");
+    $("assessmentDetailView").classList.add("hidden");
     renderAssessmentList();
     renderRekapPenilaian();
   });
@@ -2746,79 +2825,53 @@
     $("assessmentList").innerHTML = items.map(a => {
       const cat = assessmentCategories.find(c => c.name === a.jenis);
       const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
-      const isOpen = a.id === activeAssessmentId;
       return `
-        <div class="doc-item ${isOpen ? "open" : ""}" style="--tab-color:#F472B6;flex-direction:column;align-items:stretch;">
-          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
-            <div class="doc-main" data-action="open-assessment" data-id="${a.id}" style="cursor:pointer;">
-              <div class="doc-name">${escapeHtml(a.nama)}</div>
-              <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
-              <div class="doc-badges">
-                <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
-                <span class="badge synced">${modeLabel}</span>
-                <span class="badge pending">${a.soal.length} soal</span>
-              </div>
-            </div>
-            <div class="doc-actions">
-              <button class="icon-btn" data-action="open-assessment" data-id="${a.id}">${isOpen ? "▾ Tutup" : "▸ Kelola Soal & Nilai"}</button>
-              <button class="icon-btn" data-action="delete-assessment" data-id="${a.id}" style="color:var(--danger)">Hapus</button>
+        <div class="doc-item" style="--tab-color:#F472B6;">
+          <div class="doc-main">
+            <div class="doc-name">${escapeHtml(a.nama)}</div>
+            <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
+            <div class="doc-badges">
+              <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
+              <span class="badge synced">${modeLabel}</span>
+              <span class="badge pending">${a.soal.length} soal</span>
             </div>
           </div>
-          ${isOpen ? `
-            <div class="assessment-detail-inline">
-              <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${escapeHtml(a.jenis)} · ${escapeHtml(a.tanggal)}${a.semester ? " · " + escapeHtml(a.semester) : ""} · Mode: ${modeLabel}</p>
-
-              <div class="card-inline-section">
-                <h3>Daftar Soal</h3>
-                <div id="soalList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
-                <form id="soalForm">
-                  <div class="form-grid">
-                    <div class="full">
-                      <label for="soalTeks">Soal</label>
-                      <input type="text" id="soalTeks" placeholder="Tulis pertanyaan/soal…" required />
-                    </div>
-                    <div id="soalKunciWrap" class="${a.mode === "otomatis" ? "" : "hidden"}">
-                      <label for="soalKunci">Kunci Jawaban</label>
-                      <input type="text" id="soalKunci" placeholder="Jawaban yang benar" />
-                    </div>
-                    <div>
-                      <label for="soalMaxNilai">Nilai Maksimal Soal</label>
-                      <input type="number" id="soalMaxNilai" placeholder="misal: 10" value="10" min="0" />
-                    </div>
-                  </div>
-                  <div class="form-actions">
-                    <button type="submit" class="btn-primary">+ Tambah Soal</button>
-                  </div>
-                </form>
-              </div>
-
-              <div class="card-inline-section">
-                <h3>Input Nilai Mahasiswa</h3>
-                <div id="scoreTableWrap"></div>
-              </div>
-            </div>
-          ` : ""}
+          <div class="doc-actions">
+            <button class="icon-btn" data-action="open-assessment" data-id="${a.id}">Kelola Soal &amp; Nilai</button>
+            <button class="icon-btn" data-action="delete-assessment" data-id="${a.id}" style="color:var(--danger)">Hapus</button>
+          </div>
         </div>
       `;
     }).join("");
-
-    if(activeAssessmentId && items.some(a => a.id === activeAssessmentId)){
-      renderSoalList();
-      renderScoreTable();
-    }
   }
 
-  function toggleAssessmentAccordion(id){
-    activeAssessmentId = (activeAssessmentId === id) ? null : id;
+  function openAssessmentDetail(id){
+    activeAssessmentId = id;
+    const a = allAssessments.find(x => x.id === id);
+    if(!a) return;
+    $("penilaianListView").classList.add("hidden");
+    $("assessmentDetailView").classList.remove("hidden");
+    $("assessmentDetailTitle").textContent = a.nama;
+    const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
+    $("assessmentDetailSub").textContent = `${a.jenis} · ${a.tanggal}${a.semester ? " · " + a.semester : ""} · Mode: ${modeLabel}`;
+    $("soalKunciWrap").classList.toggle("hidden", a.mode !== "otomatis");
+    renderSoalList();
+    renderScoreTable();
+  }
+
+  $("backToAssessmentList").addEventListener("click", () => {
+    activeAssessmentId = null;
+    $("assessmentDetailView").classList.add("hidden");
+    $("penilaianListView").classList.remove("hidden");
     renderAssessmentList();
-  }
+    renderRekapPenilaian();
+  });
 
   $("assessmentList").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
-    if(btn.dataset.action === "open-assessment"){ toggleAssessmentAccordion(btn.dataset.id); }
+    if(btn.dataset.action === "open-assessment"){ openAssessmentDetail(btn.dataset.id); }
     if(btn.dataset.action === "delete-assessment"){ deleteAssessment(btn.dataset.id); }
-    if(btn.dataset.action === "delete-soal"){ deleteSoal(btn.dataset.soalid); }
   });
 
   async function deleteAssessment(id){
@@ -2833,7 +2886,11 @@
     allAssessmentFiles = allAssessmentFiles.filter(f => f.assessmentId !== id);
     await dbDelete(id, ASSESSMENTS_STORE);
     allAssessments = allAssessments.filter(x => x.id !== id);
-    if(activeAssessmentId === id) activeAssessmentId = null;
+    if(activeAssessmentId === id){
+      activeAssessmentId = null;
+      $("assessmentDetailView").classList.add("hidden");
+      $("penilaianListView").classList.remove("hidden");
+    }
     renderAssessmentList();
     renderRekapPenilaian();
     toast("Ujian dihapus");
@@ -2842,8 +2899,7 @@
   }
 
   // ---------- Soal CRUD ----------
-  $("assessmentList").addEventListener("submit", async (e) => {
-    if(!e.target || e.target.id !== "soalForm") return;
+  $("soalForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
@@ -2853,7 +2909,11 @@
     if(!teks){ toast("Isi teks soal dulu"); return; }
     a.soal.push({ id: uuid(), teks, kunci, maxNilai });
     await dbPut(a, ASSESSMENTS_STORE);
+    renderSoalList();
+    renderScoreTable();
     renderAssessmentList();
+    $("soalForm").reset();
+    $("soalMaxNilai").value = 10;
     toast("Soal ditambahkan");
     const course = allCourses.find(c => c.id === a.courseId);
     if(course) syncCourseMeta(course);
@@ -2867,14 +2927,21 @@
       return;
     }
     $("soalList").innerHTML = a.soal.map((s, idx) => `
-      <div class="meeting-file-row" data-soalid="${s.id}">
-        <span class="mf-name">${idx+1}. ${escapeHtml(s.teks)} ${a.mode === "otomatis" ? `<span style="color:var(--muted);">(kunci: ${escapeHtml(s.kunci||"-")})</span>` : ""} — maks ${s.maxNilai}</span>
-        <span class="mf-actions">
-          <button class="icon-btn" data-action="delete-soal" data-soalid="${s.id}" style="color:var(--danger)">Hapus</button>
-        </span>
+      <div class="soal-item" data-soalid="${s.id}">
+        <div class="soal-item-main">
+          <div class="soal-item-teks"><strong>${idx+1}.</strong> ${escapeHtml(s.teks)} <span class="soal-item-maks">(maks ${s.maxNilai})</span></div>
+          ${a.mode === "otomatis" ? `<div class="soal-item-kunci"><span class="soal-kunci-label">Kunci Jawaban:</span> ${s.kunci ? escapeHtml(s.kunci) : '<em style="color:var(--danger);">belum diisi</em>'}</div>` : ""}
+        </div>
+        <button class="icon-btn" data-action="delete-soal" data-soalid="${s.id}" style="color:var(--danger)">Hapus</button>
       </div>
     `).join("");
   }
+
+  $("soalList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action='delete-soal']");
+    if(!btn) return;
+    deleteSoal(btn.dataset.soalid);
+  });
 
   async function deleteSoal(soalId){
     const a = allAssessments.find(x => x.id === activeAssessmentId);
@@ -2885,6 +2952,8 @@
       if(a.jawaban[studentId]) delete a.jawaban[studentId][soalId];
     }
     await dbPut(a, ASSESSMENTS_STORE);
+    renderSoalList();
+    renderScoreTable();
     renderAssessmentList();
     toast("Soal dihapus");
     const course = allCourses.find(c => c.id === a.courseId);
@@ -3009,7 +3078,7 @@
     `;
   }
 
-  $("assessmentList").addEventListener("change", async (e) => {
+  $("scoreTableWrap").addEventListener("change", async (e) => {
     const input = e.target.closest("input.jawaban-input, input.nilai-input");
     if(!input) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
@@ -3029,7 +3098,7 @@
     if(course) syncCourseMeta(course);
   });
 
-  $("assessmentList").addEventListener("click", (e) => {
+  $("scoreTableWrap").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action='attach-answer-file'], button[data-action='open-answer-file'], button[data-action='delete-answer-file']");
     if(!btn) return;
     const action = btn.dataset.action;
@@ -3049,6 +3118,53 @@
     answerFileTarget = null;
   });
 
+  // ---------- Auto-baca file jawaban & pencocokan otomatis ----------
+  async function extractPlainTextFromAnswerFile(file){
+    const ext = file.name.split(".").pop().toLowerCase();
+    if(ext === "pdf"){ return await extractLinesFromPdf(file); }
+    if(ext === "docx"){ return await extractTextFromDocx(file); }
+    if(ext === "doc"){ throw new Error("Format .doc lama belum didukung, silakan simpan sebagai .docx"); }
+    if(ext === "txt"){ return await file.text(); }
+    return null; // format lain (misal gambar/foto scan) tidak bisa dibaca otomatis
+  }
+
+  function splitAnswersByQuestionNumber(text, soalCount){
+    if(!text || soalCount <= 0) return null;
+    const lines = text.split(/\r?\n/);
+    const pattern = /^\s*(?:jawaban\s*(?:no\.?|nomor)?\s*|soal\s*(?:no\.?|nomor)?\s*)?(\d{1,2})\s*[\.\)\:\-]\s*/i;
+    const markers = [];
+    lines.forEach((line, idx) => {
+      const m = line.match(pattern);
+      if(m){
+        const num = parseInt(m[1], 10);
+        if(num >= 1 && num <= soalCount){
+          markers.push({ idx, num, matchLen: m[0].length });
+        }
+      }
+    });
+
+    const seen = new Set();
+    const orderedMarkers = [];
+    for(const m of markers){
+      if(!seen.has(m.num)){ seen.add(m.num); orderedMarkers.push(m); }
+    }
+    if(orderedMarkers.length !== soalCount) return null;
+    orderedMarkers.sort((a,b) => a.idx - b.idx);
+    const numsInDocOrder = orderedMarkers.map(m => m.num);
+    const expected = Array.from({length: soalCount}, (_, i) => i+1);
+    if(JSON.stringify(numsInDocOrder) !== JSON.stringify(expected)) return null;
+
+    const answers = new Array(soalCount).fill("");
+    for(let i=0;i<orderedMarkers.length;i++){
+      const start = orderedMarkers[i].idx;
+      const end = (i+1 < orderedMarkers.length) ? orderedMarkers[i+1].idx : lines.length;
+      const segment = lines.slice(start, end);
+      segment[0] = segment[0].replace(pattern, "");
+      answers[orderedMarkers[i].num - 1] = segment.join(" ").trim();
+    }
+    return answers;
+  }
+
   async function attachAnswerFile(assessmentId, studentId, file){
     const a = allAssessments.find(x => x.id === assessmentId);
     if(!a) return;
@@ -3058,8 +3174,34 @@
     };
     await dbPut(record, ASSESSMENT_FILES_STORE);
     allAssessmentFiles.push(record);
+
+    let parseNote = null;
+    if(a.mode === "otomatis" && a.soal.length > 0){
+      try{
+        const text = await extractPlainTextFromAnswerFile(file);
+        if(text === null){
+          parseNote = "File ini formatnya tidak bisa dibaca otomatis (misal foto/scan). File tetap tersimpan sebagai lampiran — isi kolom Jawaban secara manual di bawah untuk penilaian otomatis.";
+        } else {
+          const answers = splitAnswersByQuestionNumber(text, a.soal.length);
+          if(answers){
+            if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
+            a.soal.forEach((s, idx) => {
+              a.jawaban[studentId][s.id] = { ...a.jawaban[studentId][s.id], jawaban: answers[idx] };
+            });
+            await dbPut(a, ASSESSMENTS_STORE);
+            parseNote = "Jawaban terbaca otomatis dari file dan sudah terisi ke tiap soal — silakan cek, dan koreksi manual kalau ada yang salah baca.";
+          } else {
+            parseNote = "Sistem tidak bisa memisahkan jawaban per soal secara otomatis dari file ini (penomoran soal di file tidak terdeteksi rapi, misal 1., 2., 3., dst berurutan). File tetap tersimpan — isi kolom Jawaban secara manual di bawah.";
+          }
+        }
+      }catch(err){
+        parseNote = "Gagal membaca isi file untuk pencocokan otomatis (" + err.message + "). File tetap tersimpan sebagai lampiran, isi kolom Jawaban manual di bawah.";
+      }
+    }
+
     renderScoreTable();
-    toast(navigator.onLine ? "File jawaban disimpan, menyinkronkan…" : "File jawaban disimpan lokal (offline)");
+    renderRekapPenilaian();
+    toast(parseNote || (navigator.onLine ? "File jawaban disimpan, menyinkronkan…" : "File jawaban disimpan lokal (offline)"), parseNote ? 6000 : 2600);
     if(navigator.onLine && accessToken){ syncAssessmentFiles(); }
   }
 
