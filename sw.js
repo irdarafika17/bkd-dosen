@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bkd-dosen-shell-v3';
+const CACHE_NAME = 'bkd-dosen-shell-v4';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -32,9 +32,11 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Network-first: always try to get the latest version first.
+  // { cache: 'reload' } juga memaksa browser mengabaikan HTTP cache biasa,
+  // supaya tidak ada 2 lapis cache (HTTP cache + Service Worker cache) yang bikin nyangkut.
   // Falls back to cache only when offline (no internet).
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'reload' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
