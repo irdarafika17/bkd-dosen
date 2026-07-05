@@ -373,17 +373,27 @@
   }
   .asscat-row .asscat-name{flex:1;font-size:13px;font-weight:600;}
   .asscat-row input[type=number]{max-width:80px;padding:6px 8px;}
+  .score-table-scroll{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:8px;}
   .score-table{width:100%;border-collapse:collapse;font-size:12px;}
-  .score-table th, .score-table td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;}
+  .score-table th, .score-table td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;}
   .score-table th{color:var(--navy);font-size:10.5px;text-transform:uppercase;}
-  .score-table input{width:80px;padding:5px 6px;font-size:12px;}
+  .score-table input{width:70px;padding:5px 6px;font-size:12px;}
   .score-table .total-cell{font-weight:700;color:var(--teal);}
 
-  .score-cell{display:flex;flex-direction:column;gap:4px;min-width:130px;}
+  .score-table th.sticky-col, .score-table td.sticky-col{
+    position:sticky;background:var(--paper-card);z-index:2;white-space:normal;
+  }
+  .score-table th.sticky-col{background:var(--paper);z-index:3;}
+  .score-table td.col-nama{left:0;min-width:110px;max-width:150px;font-weight:600;box-shadow:2px 0 4px rgba(0,0,0,0.04);}
+  .score-table th.col-nama{left:0;}
+  .score-table td.col-lampiran{left:110px;min-width:150px;max-width:170px;box-shadow:2px 0 4px rgba(0,0,0,0.04);}
+  .score-table th.col-lampiran{left:110px;}
+
+  .score-cell{display:flex;flex-direction:column;gap:4px;min-width:78px;}
   .score-cell input{width:100%;}
-  .answer-file-row{font-size:10.5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .answer-file-row{font-size:10.5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;white-space:normal;}
   .answer-file-row button{padding:3px 6px;font-size:10px;background:var(--gray-badge);color:var(--navy);}
-  .answer-file-row .af-name{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;}
+  .answer-file-row .af-name{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;}
 
   /* ---------- Attendance table ---------- */
   .att-table{width:100%;border-collapse:collapse;font-size:12.5px;}
@@ -951,7 +961,7 @@
   let activeAssessmentId = null;
   let assessmentCategories = [];
   let allAssessmentFiles = [];
-  let answerFileTarget = null; // {assessmentId, studentId, soalId}
+  let answerFileTarget = null; // {assessmentId, studentId} — satu lampiran per mahasiswa per tugas/ujian
   let selectedRpsFile = null;
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
@@ -1327,6 +1337,36 @@
     allAttendance = await dbGetAll(ATTENDANCE_STORE);
     allAssessments = await dbGetAll(ASSESSMENTS_STORE);
     allAssessmentFiles = await dbGetAll(ASSESSMENT_FILES_STORE);
+    await migrateLegacyPerSoalAssessmentFiles();
+  }
+
+  // Migrasi: versi lama menyimpan 1 lampiran per (assessment, student, soal).
+  // Sekarang cukup 1 lampiran per (assessment, student). Gabungkan otomatis:
+  // pilih lampiran pertama yang ditemukan per mahasiswa, hapus sisanya.
+  async function migrateLegacyPerSoalAssessmentFiles(){
+    const hasLegacy = allAssessmentFiles.some(f => f.soalId);
+    if(!hasLegacy) return;
+    const seen = new Map(); // key: assessmentId|studentId -> file kept
+    const toDelete = [];
+    for(const f of allAssessmentFiles){
+      const key = `${f.assessmentId}|${f.studentId}`;
+      if(!seen.has(key)){
+        seen.set(key, f);
+      } else {
+        toDelete.push(f);
+      }
+    }
+    for(const f of seen.values()){
+      if(f.soalId){ f.soalId = null; await dbPut(f, ASSESSMENT_FILES_STORE); }
+    }
+    for(const f of toDelete){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, ASSESSMENT_FILES_STORE);
+    }
+    if(toDelete.length){
+      allAssessmentFiles = allAssessmentFiles.filter(f => !toDelete.includes(f));
+      toast(`Lampiran lama digabung: ${toDelete.length} duplikat per-soal dirapikan jadi satu lampiran per mahasiswa.`);
+    }
   }
 
   // ---------- Metadata sync (nama matkul, daftar pertemuan, daftar mahasiswa) ----------
@@ -2482,18 +2522,12 @@
     if(!btn) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
-    if(!confirm("Hapus soal ini? Nilai dan lampiran jawaban mahasiswa untuk soal ini juga akan terhapus.")) return;
+    if(!confirm("Hapus soal ini? Nilai mahasiswa untuk soal ini juga akan terhapus. (Lampiran file jawaban tidak terpengaruh karena disimpan per tugas/ujian, bukan per soal.)")) return;
     a.soal = a.soal.filter(s => s.id !== btn.dataset.soalid);
     for(const studentId in a.jawaban){
       if(a.jawaban[studentId]) delete a.jawaban[studentId][btn.dataset.soalid];
     }
     await dbPut(a, ASSESSMENTS_STORE);
-    const relatedFiles = allAssessmentFiles.filter(f => f.soalId === btn.dataset.soalid && f.assessmentId === a.id);
-    for(const f of relatedFiles){
-      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
-      await dbDelete(f.id, ASSESSMENT_FILES_STORE);
-    }
-    allAssessmentFiles = allAssessmentFiles.filter(f => !(f.soalId === btn.dataset.soalid && f.assessmentId === a.id));
     renderSoalList();
     renderScoreTable();
     renderAssessmentList();
@@ -2566,50 +2600,56 @@
     wrap.innerHTML = `
       <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">
         ${isOtomatis
-          ? "Isi jawaban mahasiswa di kolom teks — nilai dihitung otomatis dengan mencocokkan ke kunci jawaban. Bisa juga lampirkan file jawaban (misal hasil scan) sebagai bukti."
-          : "Isi jawaban (opsional, sebagai catatan) dan nilai per soal secara manual — total dihitung otomatis dari nilai yang kamu masukkan. Bisa juga lampirkan file jawaban mahasiswa."}
+          ? "Isi jawaban mahasiswa di kolom teks — nilai dihitung otomatis dengan mencocokkan ke kunci jawaban. Kolom Nama &amp; Lampiran tetap terlihat saat tabel digeser ke kanan."
+          : "Isi jawaban (opsional, sebagai catatan) dan nilai per soal secara manual — total dihitung otomatis dari nilai yang kamu masukkan. Kolom Nama &amp; Lampiran tetap terlihat saat tabel digeser ke kanan."}
+        Satu file lampiran jawaban cukup diunggah sekali per mahasiswa untuk keseluruhan tugas/ujian ini (bukan per soal).
       </p>
-      <table class="score-table">
-        <thead>
-          <tr>
-            <th>Nama</th>
-            ${a.soal.map((s, idx) => `<th>Soal ${idx+1} (${s.maxNilai})</th>`).join("")}
-            <th>Total (0-100)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${students.map(st => {
-            const total = computeStudentTotal(a, st.id);
-            return `
-              <tr data-student="${st.id}">
-                <td>${escapeHtml(st.nama)}</td>
-                ${a.soal.map(s => {
-                  const cell = (a.jawaban[st.id] || {})[s.id] || {};
-                  const jawabanVal = cell.jawaban || "";
-                  const nilaiVal = cell.nilai != null ? cell.nilai : "";
-                  const file = allAssessmentFiles.find(f => f.assessmentId === a.id && f.studentId === st.id && f.soalId === s.id);
-                  return `
-                    <td>
-                      <div class="score-cell">
-                        <input type="text" class="jawaban-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(jawabanVal)}" placeholder="jawaban" />
-                        ${!isOtomatis ? `<input type="number" class="nilai-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(nilaiVal))}" placeholder="nilai" />` : ""}
-                        <div class="answer-file-row" data-student="${st.id}" data-soal="${s.id}">
-                          ${file
-                            ? `<span class="af-name" title="${escapeHtml(file.name)}">📎 ${escapeHtml(file.name)}</span>
-                               <button type="button" data-action="open-answer-file" data-fileid="${file.id}">Buka</button>
-                               <button type="button" data-action="delete-answer-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>`
-                            : `<button type="button" data-action="attach-answer-file" data-student="${st.id}" data-soal="${s.id}">📎 Lampirkan File</button>`}
+      <div class="score-table-scroll">
+        <table class="score-table">
+          <thead>
+            <tr>
+              <th class="sticky-col col-nama">Nama</th>
+              <th class="sticky-col col-lampiran">Lampiran Jawaban</th>
+              ${a.soal.map((s, idx) => `<th>Soal ${idx+1} (${s.maxNilai})</th>`).join("")}
+              <th>Total (0-100)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${students.map(st => {
+              const total = computeStudentTotal(a, st.id);
+              const file = allAssessmentFiles.find(f => f.assessmentId === a.id && f.studentId === st.id);
+              return `
+                <tr data-student="${st.id}">
+                  <td class="sticky-col col-nama">${escapeHtml(st.nama)}</td>
+                  <td class="sticky-col col-lampiran">
+                    <div class="answer-file-row" data-student="${st.id}">
+                      ${file
+                        ? `<span class="af-name" title="${escapeHtml(file.name)}">📎 ${escapeHtml(file.name)}</span>
+                           <button type="button" data-action="open-answer-file" data-fileid="${file.id}">Buka</button>
+                           <button type="button" data-action="delete-answer-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>`
+                        : `<button type="button" data-action="attach-answer-file" data-student="${st.id}">📎 Lampirkan File</button>`}
+                    </div>
+                  </td>
+                  ${a.soal.map(s => {
+                    const cell = (a.jawaban[st.id] || {})[s.id] || {};
+                    const jawabanVal = cell.jawaban || "";
+                    const nilaiVal = cell.nilai != null ? cell.nilai : "";
+                    return `
+                      <td>
+                        <div class="score-cell">
+                          <input type="text" class="jawaban-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(jawabanVal)}" placeholder="jawaban" />
+                          ${!isOtomatis ? `<input type="number" class="nilai-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(nilaiVal))}" placeholder="nilai" />` : ""}
                         </div>
-                      </div>
-                    </td>
-                  `;
-                }).join("")}
-                <td class="total-cell" data-total-for="${st.id}">${total}</td>
-              </tr>
-            `;
-          }).join("")}
-        </tbody>
-      </table>
+                      </td>
+                    `;
+                  }).join("")}
+                  <td class="total-cell" data-total-for="${st.id}">${total}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -2638,7 +2678,7 @@
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "attach-answer-file"){
-      answerFileTarget = { assessmentId: activeAssessmentId, studentId: btn.dataset.student, soalId: btn.dataset.soal };
+      answerFileTarget = { assessmentId: activeAssessmentId, studentId: btn.dataset.student };
       $("answerFileInput").click();
     }
     if(action === "open-answer-file"){ openAnswerFileInBrowser(btn.dataset.fileid); }
@@ -2648,16 +2688,16 @@
   $("answerFileInput").addEventListener("change", async () => {
     const input = $("answerFileInput");
     if(!input.files[0] || !answerFileTarget) return;
-    await attachAnswerFile(answerFileTarget.assessmentId, answerFileTarget.studentId, answerFileTarget.soalId, input.files[0]);
+    await attachAnswerFile(answerFileTarget.assessmentId, answerFileTarget.studentId, input.files[0]);
     input.value = "";
     answerFileTarget = null;
   });
 
-  async function attachAnswerFile(assessmentId, studentId, soalId, file){
+  async function attachAnswerFile(assessmentId, studentId, file){
     const a = allAssessments.find(x => x.id === assessmentId);
     if(!a) return;
     const record = {
-      id: uuid(), assessmentId, studentId, soalId, courseId: a.courseId,
+      id: uuid(), assessmentId, studentId, soalId: null, courseId: a.courseId,
       name: file.name, driveFileId: null, syncStatus: "local", blob: file
     };
     await dbPut(record, ASSESSMENT_FILES_STORE);
