@@ -9,6 +9,8 @@
 <meta name="theme-color" content="#1E3A5F" />
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -41,6 +43,37 @@
     -webkit-font-smoothing:antialiased;
   }
   a{color:inherit;}
+
+  /* ---------- Absensi: konteks mata kuliah aktif (sticky) & daftar mahasiswa ringkas ---------- */
+  .course-context-bar{
+    position:sticky;
+    top:var(--topbar-h, 64px);
+    z-index:15;
+    background:var(--teal-light);
+    color:var(--navy);
+    padding:8px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    border-radius:8px;
+    margin-bottom:14px;
+    box-shadow:0 2px 4px rgba(0,0,0,0.06);
+  }
+  #studentListDetails{margin-top:0;}
+  #studentListDetails summary{
+    cursor:pointer;
+    font-size:13px;
+    font-weight:600;
+    color:var(--navy);
+    padding:8px 0;
+    list-style:none;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  #studentListDetails summary::-webkit-details-marker{display:none;}
+  #studentListDetails summary::before{content:"▸";transition:transform 0.15s;}
+  #studentListDetails[open] summary::before{transform:rotate(90deg);}
+  .student-table-scroll{max-height:320px;overflow-y:auto;margin-top:6px;border:1px solid var(--line);border-radius:8px;}
 
   /* ---------- Top bar ---------- */
   header.topbar{
@@ -373,6 +406,11 @@
   }
   .asscat-row .asscat-name{flex:1;font-size:13px;font-weight:600;}
   .asscat-row input[type=number]{max-width:80px;padding:6px 8px;}
+  .assessment-detail-inline{border-top:1px dashed var(--line);margin-top:12px;padding-top:12px;}
+  .assessment-detail-inline .card-inline-section{margin-bottom:16px;}
+  .assessment-detail-inline .card-inline-section h3{font-size:13.5px;margin:0 0 8px;color:var(--navy);}
+  .doc-item.open{box-shadow:0 0 0 2px var(--teal) inset;}
+
   .score-table-scroll{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:8px;}
   .score-table{width:100%;border-collapse:collapse;font-size:12px;}
   .score-table th, .score-table td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;}
@@ -710,6 +748,8 @@
 
       <div id="absensiContent" class="hidden">
 
+        <div id="absensiCourseBadge" class="course-context-bar"></div>
+
         <section class="card">
           <h2>Daftar Mahasiswa</h2>
           <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload file Excel (.xlsx) atau CSV berisi kolom: <strong>Nama, NIM, Jurusan, Semester, No HP</strong>. Daftar ini otomatis dipakai untuk Absensi &amp; Penilaian mata kuliah ini.</p>
@@ -721,7 +761,12 @@
           <div class="form-actions">
             <button type="button" id="studentUploadBtn" class="btn-primary">Impor Daftar Mahasiswa</button>
           </div>
-          <div id="studentTableWrap" style="margin-top:14px;"></div>
+          <div id="studentTableWrap" style="margin-top:14px;">
+            <details id="studentListDetails">
+              <summary><span id="studentCountLabel">Belum ada mahasiswa</span> — klik untuk lihat/sembunyikan daftar</summary>
+              <div class="student-table-scroll" id="studentTableScroll"></div>
+            </details>
+          </div>
         </section>
 
         <div id="absensiListView">
@@ -745,8 +790,23 @@
 
         <div id="absensiFillView" class="hidden">
           <button type="button" id="backToAbsensiList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke daftar pertemuan</button>
+
           <section class="card">
             <h2 id="absensiFillTitle">Absensi Pertemuan</h2>
+            <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">
+              Upload file absensi (PDF/Word/Excel) untuk otomatis mengisi status Hadir/Izin/Sakit/Alfa berdasarkan nama.
+              File asli akan tersimpan dan bisa dibuka/didownload lagi kapan saja. Status tetap bisa diedit manual di tabel bawah, baik sudah upload file maupun tidak.
+            </p>
+            <div id="attendanceFileDropzone" class="file-drop">
+              <span id="attendanceFileDropzoneLabel">Klik untuk pilih file PDF/Word/Excel, atau seret ke sini</span>
+              <input type="file" id="attendanceFileInput" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv" class="hidden" />
+            </div>
+            <div id="attendanceFileCurrentWrap" style="margin-top:10px;"></div>
+            <div id="attendanceMatchSummary" style="margin-top:10px;"></div>
+          </section>
+
+          <section class="card">
+            <h2>Tabel Status Kehadiran</h2>
             <div id="absensiFillTableWrap"></div>
           </section>
         </div>
@@ -831,44 +891,6 @@
           </section>
         </div>
 
-        <div id="assessmentDetailView" class="hidden">
-          <button type="button" id="backToAssessmentList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke daftar ujian</button>
-
-          <section class="card">
-            <h2 id="assessmentDetailTitle">Ujian</h2>
-            <p id="assessmentDetailSub" style="font-size:12.5px;color:var(--muted);margin-top:-8px;"></p>
-          </section>
-
-          <section class="card">
-            <h2>Daftar Soal</h2>
-            <div id="soalList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
-            <form id="soalForm">
-              <div class="form-grid">
-                <div class="full">
-                  <label for="soalTeks">Soal</label>
-                  <input type="text" id="soalTeks" placeholder="Tulis pertanyaan/soal…" required />
-                </div>
-                <div id="soalKunciWrap">
-                  <label for="soalKunci">Kunci Jawaban</label>
-                  <input type="text" id="soalKunci" placeholder="Jawaban yang benar" />
-                </div>
-                <div>
-                  <label for="soalMaxNilai">Nilai Maksimal Soal</label>
-                  <input type="number" id="soalMaxNilai" placeholder="misal: 10" value="10" min="0" />
-                </div>
-              </div>
-              <div class="form-actions">
-                <button type="submit" class="btn-primary">+ Tambah Soal</button>
-              </div>
-            </form>
-          </section>
-
-          <section class="card">
-            <h2>Input Nilai Mahasiswa</h2>
-            <div id="scoreTableWrap"></div>
-          </section>
-        </div>
-
       </div>
 
       <div id="penilaianEmptyCourse" class="empty-state">Pilih mata kuliah dulu untuk mengelola penilaian.</div>
@@ -917,7 +939,7 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 5;
+  const DB_VERSION = 6;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
@@ -926,6 +948,7 @@
   const ATTENDANCE_STORE = "attendance";
   const ASSESSMENTS_STORE = "assessments";
   const ASSESSMENT_FILES_STORE = "assessment_files";
+  const ATTENDANCE_FILES_STORE = "attendance_files"; // file absensi asli (PDF/Word/Excel) per pertemuan
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
   const DEFAULT_CATEGORIES = [
@@ -961,6 +984,7 @@
   let activeAssessmentId = null;
   let assessmentCategories = [];
   let allAssessmentFiles = [];
+  let allAttendanceFiles = [];
   let answerFileTarget = null; // {assessmentId, studentId} — satu lampiran per mahasiswa per tugas/ujian
   let selectedRpsFile = null;
   let selectedStudentFile = null;
@@ -1015,6 +1039,10 @@
         if(!_db.objectStoreNames.contains(ASSESSMENT_FILES_STORE)){
           const s = _db.createObjectStore(ASSESSMENT_FILES_STORE, { keyPath: "id" });
           s.createIndex("assessmentId", "assessmentId", { unique:false });
+        }
+        if(!_db.objectStoreNames.contains(ATTENDANCE_FILES_STORE)){
+          const s = _db.createObjectStore(ATTENDANCE_FILES_STORE, { keyPath: "id" });
+          s.createIndex("meetingId", "meetingId", { unique:false });
         }
       };
       req.onsuccess = (e) => resolve(e.target.result);
@@ -1133,7 +1161,7 @@
     const online = navigator.onLine;
     $("netDot").className = "dot " + (online ? "online" : "offline");
     $("netLabel").textContent = online ? "Online" : "Offline";
-    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAllCourseMeta(); pullMataKuliahFromDrive(); }
+    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAttendanceFiles(); syncAllCourseMeta(); pullMataKuliahFromDrive(); }
   }
   window.addEventListener("online", updateNetStatus);
   window.addEventListener("offline", updateNetStatus);
@@ -1208,6 +1236,7 @@
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
+    await syncAttendanceFiles();
     await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
@@ -1337,6 +1366,7 @@
     allAttendance = await dbGetAll(ATTENDANCE_STORE);
     allAssessments = await dbGetAll(ASSESSMENTS_STORE);
     allAssessmentFiles = await dbGetAll(ASSESSMENT_FILES_STORE);
+    allAttendanceFiles = await dbGetAll(ATTENDANCE_FILES_STORE);
     await migrateLegacyPerSoalAssessmentFiles();
   }
 
@@ -1513,9 +1543,9 @@
       renderCourseList();
       if(activeCourseId){ renderRpsList(); renderMeetingList(); }
       renderAbsensiCourseOptions();
-      if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); }
+      if(activeAbsensiCourseId){ updateAbsensiCourseBadge(); renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); }
       renderPenilaianCourseOptions();
-      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); if(activeAssessmentId){ renderScoreTable(); } }
+      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
@@ -1548,6 +1578,7 @@
     const studentsOfCourse = allStudents.filter(s => s.courseId === id);
     const attendanceOfCourse = allAttendance.filter(a => a.courseId === id);
     const assessmentsOfCourse = allAssessments.filter(a => a.courseId === id);
+    const attendanceFilesOfCourse = allAttendanceFiles.filter(f => f.courseId === id);
 
     for(const f of filesOfCourse){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
@@ -1558,6 +1589,10 @@
     for(const s of studentsOfCourse){ await dbDelete(s.id, STUDENTS_STORE); }
     for(const a of attendanceOfCourse){ await dbDelete(a.id, ATTENDANCE_STORE); }
     for(const a of assessmentsOfCourse){ await dbDelete(a.id, ASSESSMENTS_STORE); }
+    for(const f of attendanceFilesOfCourse){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, ATTENDANCE_FILES_STORE);
+    }
     await dbDelete(id, COURSES_STORE);
 
     allCourses = allCourses.filter(c => c.id !== id);
@@ -1566,6 +1601,7 @@
     allStudents = allStudents.filter(s => s.courseId !== id);
     allAttendance = allAttendance.filter(a => a.courseId !== id);
     allAssessments = allAssessments.filter(a => a.courseId !== id);
+    allAttendanceFiles = allAttendanceFiles.filter(f => f.courseId !== id);
 
     renderCourseList();
     renderAbsensiCourseOptions();
@@ -1871,6 +1907,12 @@
     for(const a of attOfMeeting){ await dbDelete(a.id, ATTENDANCE_STORE); }
     allAttendance = allAttendance.filter(a => a.meetingId !== id);
     allCourseFiles = allCourseFiles.filter(f => f.meetingId !== id);
+    const attFilesOfMeeting = allAttendanceFiles.filter(f => f.meetingId === id);
+    for(const f of attFilesOfMeeting){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, ATTENDANCE_FILES_STORE);
+    }
+    allAttendanceFiles = allAttendanceFiles.filter(f => f.meetingId !== id);
     await dbDelete(id, MEETINGS_STORE);
     allMeetings = allMeetings.filter(m => m.id !== id);
     renderMeetingList();
@@ -2034,12 +2076,16 @@
 
   function renderStudentTable(){
     const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
-    const wrap = $("studentTableWrap");
+    const scrollWrap = $("studentTableScroll");
+    const details = $("studentListDetails");
     if(students.length === 0){
-      wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada daftar mahasiswa. Upload file di atas.</div>';
+      $("studentCountLabel").textContent = "Belum ada mahasiswa";
+      scrollWrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada daftar mahasiswa. Upload file di atas.</div>';
+      details.open = false;
       return;
     }
-    wrap.innerHTML = `
+    $("studentCountLabel").textContent = `${students.length} mahasiswa terdaftar`;
+    scrollWrap.innerHTML = `
       <table class="student-table">
         <thead><tr><th>Nama</th><th>NIM</th><th>Jurusan</th><th>Semester</th><th>No HP</th></tr></thead>
         <tbody>
@@ -2047,6 +2093,14 @@
         </tbody>
       </table>
     `;
+  }
+
+  function updateAbsensiCourseBadge(){
+    const badge = $("absensiCourseBadge");
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    badge.textContent = course
+      ? `📚 Mata kuliah aktif: ${course.nama} — ${course.semester} ${course.tahunAjaran}`
+      : "";
   }
 
   const studentDrop = $("studentDrop"), studentInput = $("studentInput");
@@ -2112,6 +2166,7 @@
     $("absensiContent").classList.remove("hidden");
     $("absensiListView").classList.remove("hidden");
     $("absensiFillView").classList.add("hidden");
+    updateAbsensiCourseBadge();
     renderStudentTable();
     renderAbsensiMeetingList();
     renderRekapKehadiran();
@@ -2166,6 +2221,8 @@
     $("absensiListView").classList.add("hidden");
     $("absensiFillView").classList.remove("hidden");
     $("absensiFillTitle").textContent = `Absensi Pertemuan ke-${meeting.pertemuanKe} — ${meeting.tanggal}`;
+    $("attendanceMatchSummary").innerHTML = "";
+    renderAttendanceFileCurrent();
     renderAbsensiFillTable();
   }
 
@@ -2217,6 +2274,283 @@
     await setAttendanceStatus(activeAbsensiMeetingId, studentId, status);
     group.querySelectorAll(".att-status-btn").forEach(b => b.classList.toggle("active", b.dataset.status === status));
   });
+
+  // ---------- Upload & parsing file absensi (PDF/Word/Excel) per pertemuan ----------
+  const ATTENDANCE_STATUS_PHRASES = {
+    Hadir: ["hadir"],
+    Izin: ["izin"],
+    Sakit: ["sakit"],
+    Alfa: ["alfa", "alpa", "tanpa keterangan", "tidak hadir", "absen", "tanpa ket"]
+  };
+  const ATTENDANCE_STATUS_LETTERS = { h: "Hadir", i: "Izin", s: "Sakit", a: "Alfa" };
+
+  function detectStatusFromLine(line){
+    const low = line.toLowerCase();
+    for(const key of ["Alfa","Hadir","Izin","Sakit"]){
+      for(const phrase of ATTENDANCE_STATUS_PHRASES[key]){
+        const re = new RegExp(`\\b${phrase.replace(/\s+/g,"\\s+")}\\b`, "i");
+        const m = low.match(re);
+        if(m){ return { status: key, matchText: m[0] }; }
+      }
+    }
+    const tokens = line.trim().split(/\s+/);
+    const lastTok = (tokens[tokens.length-1] || "").toLowerCase().replace(/[^a-z]/g,"");
+    if(tokens.length >= 2 && ATTENDANCE_STATUS_LETTERS[lastTok]){
+      return { status: ATTENDANCE_STATUS_LETTERS[lastTok], matchText: tokens[tokens.length-1] };
+    }
+    return null;
+  }
+
+  function cleanCandidateName(line, matchText){
+    let name = line;
+    const idx = name.toLowerCase().lastIndexOf(matchText.toLowerCase());
+    if(idx > -1) name = name.slice(0, idx) + name.slice(idx + matchText.length);
+    name = name.replace(/^\s*\d+[.\)]?\s*/, "");
+    name = name.replace(/\b\d{5,}\b/g, "");
+    name = name.replace(/[,\-|]+/g, " ").replace(/\s{2,}/g, " ").trim();
+    return name;
+  }
+
+  function parseAttendanceLines(text){
+    const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const out = [];
+    for(const line of lines){
+      if(/^(no\.?|nama|nim|status|keterangan|kehadiran)\b/i.test(line) && line.split(/\s+/).length <= 5 && !detectStatusFromLine(line)) continue;
+      const detected = detectStatusFromLine(line);
+      if(!detected) continue;
+      const name = cleanCandidateName(line, detected.matchText);
+      if(name.length < 2) continue;
+      out.push({ name, status: detected.status });
+    }
+    return out;
+  }
+
+  function parseAttendanceRowsTabular(rows){
+    if(!rows || rows.length < 2) return [];
+    const header = rows[0];
+    const nameIdx = matchColumn(header, ["nama","name","nama mahasiswa"]);
+    const statusIdx = matchColumn(header, ["status","kehadiran","keterangan","hadir"]);
+    const out = [];
+    for(let r=1;r<rows.length;r++){
+      const row = rows[r];
+      if(!row || row.every(c => c === undefined || String(c).trim() === "")) continue;
+      const name = nameIdx > -1 ? String(row[nameIdx] ?? "").trim() : String(row[0] ?? "").trim();
+      let rawStatus = statusIdx > -1 ? String(row[statusIdx] ?? "").trim() : String(row[row.length-1] ?? "").trim();
+      const detected = detectStatusFromLine(rawStatus) || (ATTENDANCE_STATUS_LETTERS[rawStatus.toLowerCase()] ? { status: ATTENDANCE_STATUS_LETTERS[rawStatus.toLowerCase()] } : null);
+      if(!name || !detected) continue;
+      out.push({ name, status: detected.status });
+    }
+    return out;
+  }
+
+  async function extractLinesFromPdf(file){
+    const buf = await file.arrayBuffer();
+    if(window.pdfjsLib && pdfjsLib.GlobalWorkerOptions){
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const lines = [];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const byY = new Map();
+      for(const item of content.items){
+        const y = Math.round(item.transform[5]);
+        if(!byY.has(y)) byY.set(y, []);
+        byY.get(y).push(item.str);
+      }
+      const sortedY = [...byY.keys()].sort((a,b) => b - a);
+      for(const y of sortedY){ lines.push(byY.get(y).join(" ")); }
+    }
+    return lines.join("\n");
+  }
+
+  async function extractTextFromDocx(file){
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    return result.value || "";
+  }
+
+  async function parseAttendanceFile(file){
+    const ext = file.name.split(".").pop().toLowerCase();
+    if(ext === "pdf"){
+      const text = await extractLinesFromPdf(file);
+      return parseAttendanceLines(text);
+    }
+    if(ext === "docx"){
+      const text = await extractTextFromDocx(file);
+      return parseAttendanceLines(text);
+    }
+    if(ext === "doc"){
+      throw new Error("Format .doc lama belum didukung, silakan simpan sebagai .docx");
+    }
+    // xlsx / xls / csv
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try{
+          const wb = XLSX.read(e.target.result, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          resolve(parseAttendanceRowsTabular(rows));
+        }catch(err){ reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  async function processAttendanceFileUpload(file){
+    if(!activeAbsensiMeetingId){ toast("Pilih pertemuan dulu"); return; }
+    toast("Membaca file, mohon tunggu…", 4000);
+    let candidates = [];
+    try{
+      candidates = await parseAttendanceFile(file);
+    }catch(err){
+      toast(err.message || "Gagal membaca file ini");
+    }
+
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+    const matched = [];
+    const unmatched = [];
+    for(const cand of candidates){
+      let best = null, bestScore = 0;
+      for(const s of students){
+        const score = textSimilarity(cand.name, s.nama);
+        if(score > bestScore){ bestScore = score; best = s; }
+      }
+      if(best && bestScore >= 0.55){
+        await setAttendanceStatus(activeAbsensiMeetingId, best.id, cand.status);
+        matched.push({ from: cand.name, to: best.nama, status: cand.status });
+      } else {
+        unmatched.push(cand.name);
+      }
+    }
+
+    await attachAttendanceFile(activeAbsensiMeetingId, activeAbsensiCourseId, file);
+    renderAbsensiFillTable();
+
+    if(candidates.length === 0){
+      $("attendanceMatchSummary").innerHTML = `<div class="empty-state" style="padding:10px 0;color:var(--danger);">Tidak berhasil membaca data nama & status dari file ini. File tetap tersimpan sebagai lampiran — silakan isi status secara manual di tabel bawah.</div>`;
+    } else {
+      $("attendanceMatchSummary").innerHTML = `
+        <div style="font-size:12.5px;">
+          <span class="badge synced">✅ ${matched.length} nama cocok otomatis</span>
+          ${unmatched.length ? `<span class="badge pending">⚠️ ${unmatched.length} tidak ditemukan</span>` : ""}
+          ${unmatched.length ? `<div style="margin-top:6px;color:var(--muted);">Tidak ditemukan: ${unmatched.map(escapeHtml).join(", ")} — isi manual di tabel bawah.</div>` : ""}
+        </div>
+      `;
+    }
+  }
+
+  const attendanceDrop = $("attendanceFileDropzone"), attendanceInput = $("attendanceFileInput");
+  attendanceDrop.addEventListener("click", () => attendanceInput.click());
+  attendanceDrop.addEventListener("dragover", (e) => { e.preventDefault(); attendanceDrop.classList.add("drag"); });
+  attendanceDrop.addEventListener("dragleave", () => attendanceDrop.classList.remove("drag"));
+  attendanceDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); attendanceDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){ processAttendanceFileUpload(e.dataTransfer.files[0]); }
+  });
+  attendanceInput.addEventListener("change", () => {
+    if(attendanceInput.files[0]){ processAttendanceFileUpload(attendanceInput.files[0]); attendanceInput.value = ""; }
+  });
+
+  function renderAttendanceFileCurrent(){
+    const wrap = $("attendanceFileCurrentWrap");
+    const file = allAttendanceFiles.find(f => f.meetingId === activeAbsensiMeetingId);
+    if(!file){ wrap.innerHTML = ""; return; }
+    wrap.innerHTML = `
+      <div class="answer-file-row" style="font-size:12.5px;">
+        <span class="af-name">📎 ${escapeHtml(file.name)}</span>
+        <button type="button" data-action="open-attendance-file" data-fileid="${file.id}">Buka</button>
+        <button type="button" data-action="delete-attendance-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>
+      </div>
+    `;
+  }
+
+  $("attendanceFileCurrentWrap").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    if(btn.dataset.action === "open-attendance-file"){ openAttendanceFileInBrowser(btn.dataset.fileid); }
+    if(btn.dataset.action === "delete-attendance-file"){ deleteAttendanceFile(btn.dataset.fileid); }
+  });
+
+  async function attachAttendanceFile(meetingId, courseId, file){
+    const existing = allAttendanceFiles.find(f => f.meetingId === meetingId);
+    if(existing){
+      try{ if(existing.driveFileId && navigator.onLine){ await trashFileInDrive(existing.driveFileId); } }catch(e){}
+      await dbDelete(existing.id, ATTENDANCE_FILES_STORE);
+      allAttendanceFiles = allAttendanceFiles.filter(f => f.id !== existing.id);
+    }
+    const record = {
+      id: uuid(), meetingId, courseId,
+      name: file.name, driveFileId: null, syncStatus: "local", blob: file
+    };
+    await dbPut(record, ATTENDANCE_FILES_STORE);
+    allAttendanceFiles.push(record);
+    renderAttendanceFileCurrent();
+    renderAbsensiMeetingList();
+    toast(navigator.onLine ? "File absensi disimpan, menyinkronkan…" : "File absensi disimpan lokal (offline)");
+    if(navigator.onLine && accessToken){ syncAttendanceFiles(); }
+  }
+
+  async function deleteAttendanceFile(id){
+    const f = allAttendanceFiles.find(x => x.id === id);
+    if(!f) return;
+    if(!confirm(`Hapus lampiran "${f.name}"? (Status kehadiran yang sudah terisi tidak akan ikut terhapus)`)) return;
+    try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+    await dbDelete(id, ATTENDANCE_FILES_STORE);
+    allAttendanceFiles = allAttendanceFiles.filter(x => x.id !== id);
+    renderAttendanceFileCurrent();
+    renderAbsensiMeetingList();
+    toast("Lampiran dihapus");
+  }
+
+  async function openAttendanceFileInBrowser(id){
+    const f = allAttendanceFiles.find(x => x.id === id);
+    if(!f) return;
+    try{
+      let blob = f.blob;
+      if(!blob){
+        if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline"); return; }
+        blob = await downloadBlobFromDrive(f.driveFileId);
+        f.blob = blob;
+        await dbPut(f, ATTENDANCE_FILES_STORE);
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")) handleAuthExpired();
+      else toast("Gagal membuka file");
+    }
+  }
+
+  async function syncAttendanceFiles(){
+    if(!accessToken || !navigator.onLine) return;
+    const pending = allAttendanceFiles.filter(f => f.syncStatus === "local");
+    if(pending.length === 0) return;
+    try{
+      await ensureMatkulFolder();
+      for(const f of pending){
+        try{
+          const fileId = await uploadBlobToDrive(f.blob, f.name, matkulFolderId, {
+            recordType: "attendance_file",
+            courseId: f.courseId,
+            meetingId: f.meetingId
+          });
+          f.driveFileId = fileId;
+          f.syncStatus = "synced";
+          await dbPut(f, ATTENDANCE_FILES_STORE);
+        }catch(e){
+          if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
+          console.warn("Gagal sync file absensi", f.name, e);
+        }
+      }
+      renderAttendanceFileCurrent();
+    }catch(e){
+      console.warn("syncAttendanceFiles gagal", e);
+    }
+  }
 
   async function setAttendanceStatus(meetingId, studentId, status){
     const id = `att_${meetingId}_${studentId}`;
@@ -2363,6 +2697,7 @@
 
   $("penilaianCourseSelect").addEventListener("change", () => {
     activePenilaianCourseId = $("penilaianCourseSelect").value || null;
+    activeAssessmentId = null;
     if(!activePenilaianCourseId){
       $("penilaianContent").classList.add("hidden");
       $("penilaianEmptyCourse").classList.remove("hidden");
@@ -2371,7 +2706,6 @@
     $("penilaianEmptyCourse").classList.add("hidden");
     $("penilaianContent").classList.remove("hidden");
     $("penilaianListView").classList.remove("hidden");
-    $("assessmentDetailView").classList.add("hidden");
     renderAssessmentList();
     renderRekapPenilaian();
   });
@@ -2412,31 +2746,79 @@
     $("assessmentList").innerHTML = items.map(a => {
       const cat = assessmentCategories.find(c => c.name === a.jenis);
       const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
+      const isOpen = a.id === activeAssessmentId;
       return `
-        <div class="doc-item" style="--tab-color:#F472B6;">
-          <div class="doc-main">
-            <div class="doc-name">${escapeHtml(a.nama)}</div>
-            <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
-            <div class="doc-badges">
-              <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
-              <span class="badge synced">${modeLabel}</span>
-              <span class="badge pending">${a.soal.length} soal</span>
+        <div class="doc-item ${isOpen ? "open" : ""}" style="--tab-color:#F472B6;flex-direction:column;align-items:stretch;">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+            <div class="doc-main" data-action="open-assessment" data-id="${a.id}" style="cursor:pointer;">
+              <div class="doc-name">${escapeHtml(a.nama)}</div>
+              <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
+              <div class="doc-badges">
+                <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
+                <span class="badge synced">${modeLabel}</span>
+                <span class="badge pending">${a.soal.length} soal</span>
+              </div>
+            </div>
+            <div class="doc-actions">
+              <button class="icon-btn" data-action="open-assessment" data-id="${a.id}">${isOpen ? "▾ Tutup" : "▸ Kelola Soal & Nilai"}</button>
+              <button class="icon-btn" data-action="delete-assessment" data-id="${a.id}" style="color:var(--danger)">Hapus</button>
             </div>
           </div>
-          <div class="doc-actions">
-            <button class="icon-btn" data-action="open-assessment" data-id="${a.id}">Kelola Soal &amp; Nilai</button>
-            <button class="icon-btn" data-action="delete-assessment" data-id="${a.id}" style="color:var(--danger)">Hapus</button>
-          </div>
+          ${isOpen ? `
+            <div class="assessment-detail-inline">
+              <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${escapeHtml(a.jenis)} · ${escapeHtml(a.tanggal)}${a.semester ? " · " + escapeHtml(a.semester) : ""} · Mode: ${modeLabel}</p>
+
+              <div class="card-inline-section">
+                <h3>Daftar Soal</h3>
+                <div id="soalList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+                <form id="soalForm">
+                  <div class="form-grid">
+                    <div class="full">
+                      <label for="soalTeks">Soal</label>
+                      <input type="text" id="soalTeks" placeholder="Tulis pertanyaan/soal…" required />
+                    </div>
+                    <div id="soalKunciWrap" class="${a.mode === "otomatis" ? "" : "hidden"}">
+                      <label for="soalKunci">Kunci Jawaban</label>
+                      <input type="text" id="soalKunci" placeholder="Jawaban yang benar" />
+                    </div>
+                    <div>
+                      <label for="soalMaxNilai">Nilai Maksimal Soal</label>
+                      <input type="number" id="soalMaxNilai" placeholder="misal: 10" value="10" min="0" />
+                    </div>
+                  </div>
+                  <div class="form-actions">
+                    <button type="submit" class="btn-primary">+ Tambah Soal</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="card-inline-section">
+                <h3>Input Nilai Mahasiswa</h3>
+                <div id="scoreTableWrap"></div>
+              </div>
+            </div>
+          ` : ""}
         </div>
       `;
     }).join("");
+
+    if(activeAssessmentId && items.some(a => a.id === activeAssessmentId)){
+      renderSoalList();
+      renderScoreTable();
+    }
+  }
+
+  function toggleAssessmentAccordion(id){
+    activeAssessmentId = (activeAssessmentId === id) ? null : id;
+    renderAssessmentList();
   }
 
   $("assessmentList").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action]");
+    const btn = e.target.closest("[data-action]");
     if(!btn) return;
-    if(btn.dataset.action === "open-assessment"){ openAssessmentDetail(btn.dataset.id); }
+    if(btn.dataset.action === "open-assessment"){ toggleAssessmentAccordion(btn.dataset.id); }
     if(btn.dataset.action === "delete-assessment"){ deleteAssessment(btn.dataset.id); }
+    if(btn.dataset.action === "delete-soal"){ deleteSoal(btn.dataset.soalid); }
   });
 
   async function deleteAssessment(id){
@@ -2451,6 +2833,7 @@
     allAssessmentFiles = allAssessmentFiles.filter(f => f.assessmentId !== id);
     await dbDelete(id, ASSESSMENTS_STORE);
     allAssessments = allAssessments.filter(x => x.id !== id);
+    if(activeAssessmentId === id) activeAssessmentId = null;
     renderAssessmentList();
     renderRekapPenilaian();
     toast("Ujian dihapus");
@@ -2458,29 +2841,9 @@
     if(course) syncCourseMeta(course);
   }
 
-  function openAssessmentDetail(id){
-    activeAssessmentId = id;
-    const a = allAssessments.find(x => x.id === id);
-    if(!a) return;
-    $("penilaianListView").classList.add("hidden");
-    $("assessmentDetailView").classList.remove("hidden");
-    $("assessmentDetailTitle").textContent = a.nama;
-    $("assessmentDetailSub").textContent = `${a.jenis} · ${a.tanggal}${a.semester ? " · " + a.semester : ""} · Mode: ${a.mode === "otomatis" ? "Otomatis" : "Manual"}`;
-    $("soalKunciWrap").classList.toggle("hidden", a.mode !== "otomatis");
-    renderSoalList();
-    renderScoreTable();
-  }
-
-  $("backToAssessmentList").addEventListener("click", () => {
-    activeAssessmentId = null;
-    $("assessmentDetailView").classList.add("hidden");
-    $("penilaianListView").classList.remove("hidden");
-    renderAssessmentList();
-    renderRekapPenilaian();
-  });
-
   // ---------- Soal CRUD ----------
-  $("soalForm").addEventListener("submit", async (e) => {
+  $("assessmentList").addEventListener("submit", async (e) => {
+    if(!e.target || e.target.id !== "soalForm") return;
     e.preventDefault();
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
@@ -2490,11 +2853,7 @@
     if(!teks){ toast("Isi teks soal dulu"); return; }
     a.soal.push({ id: uuid(), teks, kunci, maxNilai });
     await dbPut(a, ASSESSMENTS_STORE);
-    renderSoalList();
-    renderScoreTable();
     renderAssessmentList();
-    $("soalForm").reset();
-    $("soalMaxNilai").value = 10;
     toast("Soal ditambahkan");
     const course = allCourses.find(c => c.id === a.courseId);
     if(course) syncCourseMeta(course);
@@ -2502,7 +2861,7 @@
 
   function renderSoalList(){
     const a = allAssessments.find(x => x.id === activeAssessmentId);
-    if(!a){ $("soalList").innerHTML = ""; return; }
+    if(!a || !$("soalList")){ return; }
     if(a.soal.length === 0){
       $("soalList").innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada soal.</div>';
       return;
@@ -2517,24 +2876,20 @@
     `).join("");
   }
 
-  $("soalList").addEventListener("click", async (e) => {
-    const btn = e.target.closest("button[data-action='delete-soal']");
-    if(!btn) return;
+  async function deleteSoal(soalId){
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
     if(!confirm("Hapus soal ini? Nilai mahasiswa untuk soal ini juga akan terhapus. (Lampiran file jawaban tidak terpengaruh karena disimpan per tugas/ujian, bukan per soal.)")) return;
-    a.soal = a.soal.filter(s => s.id !== btn.dataset.soalid);
+    a.soal = a.soal.filter(s => s.id !== soalId);
     for(const studentId in a.jawaban){
-      if(a.jawaban[studentId]) delete a.jawaban[studentId][btn.dataset.soalid];
+      if(a.jawaban[studentId]) delete a.jawaban[studentId][soalId];
     }
     await dbPut(a, ASSESSMENTS_STORE);
-    renderSoalList();
-    renderScoreTable();
     renderAssessmentList();
     toast("Soal dihapus");
     const course = allCourses.find(c => c.id === a.courseId);
     if(course) syncCourseMeta(course);
-  });
+  }
 
   // ---------- Scoring ----------
   function levenshtein(a, b){
@@ -2586,6 +2941,7 @@
   function renderScoreTable(){
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     const wrap = $("scoreTableWrap");
+    if(!wrap) return;
     if(!a) { wrap.innerHTML = ""; return; }
     const students = allStudents.filter(s => s.courseId === a.courseId);
     if(students.length === 0){
@@ -2653,7 +3009,7 @@
     `;
   }
 
-  $("scoreTableWrap").addEventListener("change", async (e) => {
+  $("assessmentList").addEventListener("change", async (e) => {
     const input = e.target.closest("input.jawaban-input, input.nilai-input");
     if(!input) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
@@ -2673,8 +3029,8 @@
     if(course) syncCourseMeta(course);
   });
 
-  $("scoreTableWrap").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action]");
+  $("assessmentList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action='attach-answer-file'], button[data-action='open-answer-file'], button[data-action='delete-answer-file']");
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "attach-answer-file"){
@@ -3201,6 +3557,7 @@
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
+    await syncAttendanceFiles();
     await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
@@ -3208,7 +3565,14 @@
   });
 
   // ====== Init ======
+  function updateTopbarHeightVar(){
+    const bar = document.querySelector("header.topbar");
+    if(bar){ document.documentElement.style.setProperty("--topbar-h", bar.offsetHeight + "px"); }
+  }
+
   async function init(){
+    updateTopbarHeightVar();
+    window.addEventListener("resize", updateTopbarHeightVar);
     updateNetStatus();
     loadCategories();
     renderCategoryChips();
