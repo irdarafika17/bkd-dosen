@@ -379,6 +379,12 @@
   .score-table input{width:80px;padding:5px 6px;font-size:12px;}
   .score-table .total-cell{font-weight:700;color:var(--teal);}
 
+  .score-cell{display:flex;flex-direction:column;gap:4px;min-width:130px;}
+  .score-cell input{width:100%;}
+  .answer-file-row{font-size:10.5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .answer-file-row button{padding:3px 6px;font-size:10px;background:var(--gray-badge);color:var(--navy);}
+  .answer-file-row .af-name{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;}
+
   /* ---------- Attendance table ---------- */
   .att-table{width:100%;border-collapse:collapse;font-size:12.5px;}
   .att-table th, .att-table td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);}
@@ -543,6 +549,12 @@
             </select>
           </div>
           <div>
+            <label for="docMatkul">Mata Kuliah (opsional)</label>
+            <select id="docMatkul">
+              <option value="">Tidak terkait mata kuliah tertentu</option>
+            </select>
+          </div>
+          <div>
             <label for="semester">Semester / Tahun Ajaran</label>
             <input type="text" id="semester" placeholder="misal: Ganjil 2026/2027" />
           </div>
@@ -571,9 +583,12 @@
     <section class="card">
       <h2>Dokumen Tersimpan</h2>
       <div class="filters">
-        <input type="text" id="searchInput" placeholder="Cari nama file atau catatan…" />
+        <input type="text" id="searchInput" placeholder="Cari nama file, semester, atau catatan…" />
         <select id="filterJenis">
           <option value="">Semua jenis</option>
+        </select>
+        <select id="filterMatkul">
+          <option value="">Semua mata kuliah</option>
         </select>
       </div>
       <div id="docList" class="doc-list"></div>
@@ -613,6 +628,16 @@
 
         <section class="card">
           <h2>Daftar Mata Kuliah</h2>
+          <div class="filters">
+            <select id="courseFilterSemester">
+              <option value="">Semua Semester</option>
+              <option value="Ganjil">Ganjil</option>
+              <option value="Genap">Genap</option>
+            </select>
+            <select id="courseFilterTahun">
+              <option value="">Semua Tahun Ajaran</option>
+            </select>
+          </div>
           <div id="courseList" class="course-grid"></div>
           <div id="courseEmptyState" class="empty-state hidden">Belum ada mata kuliah. Tambahkan lewat form di atas.</div>
         </section>
@@ -624,20 +649,6 @@
         <section class="card">
           <h2 id="courseDetailTitle">Mata Kuliah</h2>
           <p id="courseDetailSub" style="font-size:12.5px;color:var(--muted);margin-top:-8px;"></p>
-        </section>
-
-        <section class="card">
-          <h2>Daftar Mahasiswa</h2>
-          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload file Excel (.xlsx) atau CSV berisi kolom: <strong>Nama, NIM, Jurusan, Semester, No HP</strong>. Daftar ini otomatis dipakai di Absensi &amp; Penilaian mata kuliah ini.</p>
-          <div class="file-drop" id="studentDrop">
-            <div>Klik untuk pilih file Excel/CSV, atau seret ke sini</div>
-            <div class="picked" id="studentPicked"></div>
-          </div>
-          <input type="file" id="studentInput" class="hidden" accept=".xlsx,.xls,.csv" />
-          <div class="form-actions">
-            <button type="button" id="studentUploadBtn" class="btn-primary">Impor Daftar Mahasiswa</button>
-          </div>
-          <div id="studentTableWrap" style="margin-top:14px;"></div>
         </section>
 
         <section class="card">
@@ -688,6 +699,20 @@
       </section>
 
       <div id="absensiContent" class="hidden">
+
+        <section class="card">
+          <h2>Daftar Mahasiswa</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload file Excel (.xlsx) atau CSV berisi kolom: <strong>Nama, NIM, Jurusan, Semester, No HP</strong>. Daftar ini otomatis dipakai untuk Absensi &amp; Penilaian mata kuliah ini.</p>
+          <div class="file-drop" id="studentDrop">
+            <div>Klik untuk pilih file Excel/CSV, atau seret ke sini</div>
+            <div class="picked" id="studentPicked"></div>
+          </div>
+          <input type="file" id="studentInput" class="hidden" accept=".xlsx,.xls,.csv" />
+          <div class="form-actions">
+            <button type="button" id="studentUploadBtn" class="btn-primary">Impor Daftar Mahasiswa</button>
+          </div>
+          <div id="studentTableWrap" style="margin-top:14px;"></div>
+        </section>
 
         <div id="absensiListView">
           <section class="card">
@@ -855,11 +880,13 @@
       <div class="picked" id="materialPicked"></div>
     </div>
     <input type="file" id="materialInput" class="hidden" />
+    <input type="file" id="answerFileInput" class="hidden" />
     <div style="margin-top:12px;">
       <label for="materialKind">Jenis File</label>
       <select id="materialKind">
         <option value="Materi Ajar">Materi Ajar</option>
         <option value="Slide">Slide</option>
+        <option value="Foto Dokumentasi">Foto Dokumentasi</option>
       </select>
     </div>
     <div class="form-actions">
@@ -880,7 +907,7 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 4;
+  const DB_VERSION = 5;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
@@ -888,6 +915,7 @@
   const STUDENTS_STORE = "students";
   const ATTENDANCE_STORE = "attendance";
   const ASSESSMENTS_STORE = "assessments";
+  const ASSESSMENT_FILES_STORE = "assessment_files";
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
   const DEFAULT_CATEGORIES = [
@@ -922,6 +950,8 @@
   let activePenilaianCourseId = null;
   let activeAssessmentId = null;
   let assessmentCategories = [];
+  let allAssessmentFiles = [];
+  let answerFileTarget = null; // {assessmentId, studentId, soalId}
   let selectedRpsFile = null;
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
@@ -971,6 +1001,10 @@
         if(!_db.objectStoreNames.contains(ASSESSMENTS_STORE)){
           const s = _db.createObjectStore(ASSESSMENTS_STORE, { keyPath: "id" });
           s.createIndex("courseId", "courseId", { unique:false });
+        }
+        if(!_db.objectStoreNames.contains(ASSESSMENT_FILES_STORE)){
+          const s = _db.createObjectStore(ASSESSMENT_FILES_STORE, { keyPath: "id" });
+          s.createIndex("assessmentId", "assessmentId", { unique:false });
         }
       };
       req.onsuccess = (e) => resolve(e.target.result);
@@ -1089,7 +1123,7 @@
     const online = navigator.onLine;
     $("netDot").className = "dot " + (online ? "online" : "offline");
     $("netLabel").textContent = online ? "Online" : "Offline";
-    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAllCourseMeta(); pullMataKuliahFromDrive(); }
+    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAllCourseMeta(); pullMataKuliahFromDrive(); }
   }
   window.addEventListener("online", updateNetStatus);
   window.addEventListener("offline", updateNetStatus);
@@ -1163,6 +1197,7 @@
     await pullFromDrive();
     await attemptAutoSync();
     await syncCourseFiles();
+    await syncAssessmentFiles();
     await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
@@ -1291,6 +1326,7 @@
     allStudents = await dbGetAll(STUDENTS_STORE);
     allAttendance = await dbGetAll(ATTENDANCE_STORE);
     allAssessments = await dbGetAll(ASSESSMENTS_STORE);
+    allAssessmentFiles = await dbGetAll(ASSESSMENT_FILES_STORE);
   }
 
   // ---------- Metadata sync (nama matkul, daftar pertemuan, daftar mahasiswa) ----------
@@ -1390,9 +1426,12 @@
       }
 
       // 2) File RPS & materi/slide yang belum ada lokal
-      const fileEntries = files.filter(f => (f.properties || {}).kind !== "course_meta");
+      const courseFileEntries = files.filter(f => {
+        const props = f.properties || {};
+        return props.kind !== "course_meta" && props.recordType !== "assessment_answer";
+      });
       const existingDriveIds = new Set(allCourseFiles.map(f => f.driveFileId).filter(Boolean));
-      for(const f of fileEntries){
+      for(const f of courseFileEntries){
         if(existingDriveIds.has(f.id)) continue;
         const props = f.properties || {};
         const record = {
@@ -1410,12 +1449,34 @@
         allCourseFiles.push(record);
       }
 
+      // 3) File jawaban mahasiswa (lampiran penilaian) yang belum ada lokal
+      const answerFileEntries = files.filter(f => (f.properties || {}).recordType === "assessment_answer");
+      const existingAnswerDriveIds = new Set(allAssessmentFiles.map(f => f.driveFileId).filter(Boolean));
+      for(const f of answerFileEntries){
+        if(existingAnswerDriveIds.has(f.id)) continue;
+        const props = f.properties || {};
+        const record = {
+          id: uuid(),
+          courseId: props.courseId || null,
+          assessmentId: props.assessmentId || null,
+          studentId: props.studentId || null,
+          soalId: props.soalId || null,
+          name: f.name,
+          driveFileId: f.id,
+          syncStatus: "synced",
+          blob: null
+        };
+        await dbPut(record, ASSESSMENT_FILES_STORE);
+        allAssessmentFiles.push(record);
+      }
+
       renderCourseList();
-      if(activeCourseId){ renderRpsList(); renderMeetingList(); renderStudentTable(); }
+      if(activeCourseId){ renderRpsList(); renderMeetingList(); }
       renderAbsensiCourseOptions();
-      if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); }
+      if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); }
       renderPenilaianCourseOptions();
-      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
+      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); if(activeAssessmentId){ renderScoreTable(); } }
+      renderDocMatkulOptions();
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
       console.warn("pullMataKuliahFromDrive gagal", e);
@@ -1432,6 +1493,7 @@
     renderPenilaianCourseOptions();
     toast(`Mata kuliah "${nama}" ditambahkan`);
     syncCourseMeta(course);
+    renderDocMatkulOptions();
   }
 
   async function deleteCourse(id){
@@ -1468,6 +1530,7 @@
     renderCourseList();
     renderAbsensiCourseOptions();
     renderPenilaianCourseOptions();
+    renderDocMatkulOptions();
     if(activeAbsensiCourseId === id){
       activeAbsensiCourseId = null;
       $("absensiCourseSelect").value = "";
@@ -1493,7 +1556,6 @@
     $("courseDetailSub").textContent = `${course.semester} · Tahun Ajaran ${course.tahunAjaran}`;
     renderRpsList();
     renderMeetingList();
-    renderStudentTable();
   }
 
   function backToCourseList(){
@@ -1502,17 +1564,42 @@
     $("courseListView").classList.remove("hidden");
   }
 
+  function renderCourseFilterOptions(){
+    const tahunSel = $("courseFilterTahun");
+    const current = tahunSel.value;
+    const distinctTahun = [...new Set(allCourses.map(c => c.tahunAjaran).filter(Boolean))].sort();
+    tahunSel.innerHTML = '<option value="">Semua Tahun Ajaran</option>' +
+      distinctTahun.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    if(distinctTahun.includes(current)) tahunSel.value = current;
+  }
+
   function renderCourseList(){
+    renderCourseFilterOptions();
     const el = $("courseList");
+    const filterSemester = $("courseFilterSemester").value;
+    const filterTahun = $("courseFilterTahun").value;
+
+    const filtered = allCourses.filter(c => {
+      const matchSemester = !filterSemester || c.semester === filterSemester;
+      const matchTahun = !filterTahun || c.tahunAjaran === filterTahun;
+      return matchSemester && matchTahun;
+    });
+
     if(allCourses.length === 0){
       el.innerHTML = "";
       $("courseEmptyState").classList.remove("hidden");
+      $("courseEmptyState").textContent = "Belum ada mata kuliah. Tambahkan lewat form di atas.";
+      return;
+    }
+    if(filtered.length === 0){
+      el.innerHTML = "";
+      $("courseEmptyState").classList.remove("hidden");
+      $("courseEmptyState").textContent = "Tidak ada mata kuliah yang cocok dengan filter ini.";
       return;
     }
     $("courseEmptyState").classList.add("hidden");
-    el.innerHTML = allCourses.map(c => {
+    el.innerHTML = filtered.map(c => {
       const meetingCount = allMeetings.filter(m => m.courseId === c.id).length;
-      const studentCount = allStudents.filter(s => s.courseId === c.id).length;
       return `
         <div class="course-card" data-id="${c.id}">
           <button type="button" class="course-del" data-id="${c.id}" title="Hapus mata kuliah" aria-label="Hapus ${escapeHtml(c.nama)}">×</button>
@@ -1520,13 +1607,14 @@
           <div class="course-meta">${escapeHtml(c.semester)} · ${escapeHtml(c.tahunAjaran)}</div>
           <div class="course-stats">
             <span>${meetingCount} pertemuan</span>
-            <span>·</span>
-            <span>${studentCount} mahasiswa</span>
           </div>
         </div>
       `;
     }).join("");
   }
+
+  $("courseFilterSemester").addEventListener("change", renderCourseList);
+  $("courseFilterTahun").addEventListener("change", renderCourseList);
 
   $("courseList").addEventListener("click", (e) => {
     const delBtn = e.target.closest(".course-del");
@@ -1635,6 +1723,26 @@
     }
   }
 
+  async function openCourseFileInBrowser(id){
+    const f = allCourseFiles.find(x => x.id === id);
+    if(!f) return;
+    try{
+      let blob = f.blob;
+      if(!blob){
+        if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline, sambungkan internet dulu"); return; }
+        blob = await downloadBlobFromDrive(f.driveFileId);
+        f.blob = blob;
+        await dbPut(f, COURSE_FILES_STORE);
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // sengaja tidak revoke URL supaya tab baru tetap bisa memuat filenya
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")) handleAuthExpired();
+      else toast("Gagal membuka file. Coba unduh saja.");
+    }
+  }
+
   function fileRowHtml(f){
     const badge = f.syncStatus === "synced"
       ? '<span class="badge synced">Tersinkron</span>'
@@ -1644,6 +1752,7 @@
         <span class="mf-name">${escapeHtml(f.name)}</span>
         ${badge}
         <span class="mf-actions">
+          <button class="icon-btn" data-action="cf-open" data-id="${f.id}">Buka</button>
           <button class="icon-btn" data-action="cf-download" data-id="${f.id}">Unduh</button>
           <button class="icon-btn" data-action="cf-delete" data-id="${f.id}" style="color:var(--danger)">Hapus</button>
         </span>
@@ -1741,6 +1850,7 @@
       materialTargetMeetingId = btn.dataset.meeting;
       $("materialUploadModal").classList.remove("hidden");
     }
+    if(action === "cf-open"){ openCourseFileInBrowser(btn.dataset.id); }
     if(action === "cf-download"){ downloadCourseFile(btn.dataset.id); }
     if(action === "cf-delete"){ deleteCourseFile(btn.dataset.id); }
   });
@@ -1748,6 +1858,7 @@
   $("rpsList").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
     if(!btn) return;
+    if(btn.dataset.action === "cf-open"){ openCourseFileInBrowser(btn.dataset.id); }
     if(btn.dataset.action === "cf-download"){ downloadCourseFile(btn.dataset.id); }
     if(btn.dataset.action === "cf-delete"){ deleteCourseFile(btn.dataset.id); }
   });
@@ -1882,7 +1993,7 @@
   }
 
   function renderStudentTable(){
-    const students = allStudents.filter(s => s.courseId === activeCourseId);
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
     const wrap = $("studentTableWrap");
     if(students.length === 0){
       wrap.innerHTML = '<div class="empty-state" style="padding:10px 0;">Belum ada daftar mahasiswa. Upload file di atas.</div>';
@@ -1911,8 +2022,8 @@
   });
   $("studentUploadBtn").addEventListener("click", async () => {
     if(!selectedStudentFile){ toast("Pilih file Excel/CSV dulu"); return; }
-    if(!activeCourseId){ toast("Tidak ada mata kuliah aktif"); return; }
-    await importStudents(activeCourseId, selectedStudentFile);
+    if(!activeAbsensiCourseId){ toast("Pilih mata kuliah dulu"); return; }
+    await importStudents(activeAbsensiCourseId, selectedStudentFile);
     selectedStudentFile = null;
     $("studentPicked").textContent = "";
     studentInput.value = "";
@@ -1961,6 +2072,7 @@
     $("absensiContent").classList.remove("hidden");
     $("absensiListView").classList.remove("hidden");
     $("absensiFillView").classList.add("hidden");
+    renderStudentTable();
     renderAbsensiMeetingList();
     renderRekapKehadiran();
   });
@@ -2290,7 +2402,13 @@
   async function deleteAssessment(id){
     const a = allAssessments.find(x => x.id === id);
     if(!a) return;
-    if(!confirm(`Hapus ujian "${a.nama}"? Semua soal dan nilai di dalamnya juga akan terhapus.`)) return;
+    if(!confirm(`Hapus ujian "${a.nama}"? Semua soal, nilai, dan lampiran jawaban di dalamnya juga akan terhapus.`)) return;
+    const relatedFiles = allAssessmentFiles.filter(f => f.assessmentId === id);
+    for(const f of relatedFiles){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, ASSESSMENT_FILES_STORE);
+    }
+    allAssessmentFiles = allAssessmentFiles.filter(f => f.assessmentId !== id);
     await dbDelete(id, ASSESSMENTS_STORE);
     allAssessments = allAssessments.filter(x => x.id !== id);
     renderAssessmentList();
@@ -2364,12 +2482,18 @@
     if(!btn) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
-    if(!confirm("Hapus soal ini? Nilai mahasiswa untuk soal ini juga akan terhapus.")) return;
+    if(!confirm("Hapus soal ini? Nilai dan lampiran jawaban mahasiswa untuk soal ini juga akan terhapus.")) return;
     a.soal = a.soal.filter(s => s.id !== btn.dataset.soalid);
     for(const studentId in a.jawaban){
       if(a.jawaban[studentId]) delete a.jawaban[studentId][btn.dataset.soalid];
     }
     await dbPut(a, ASSESSMENTS_STORE);
+    const relatedFiles = allAssessmentFiles.filter(f => f.soalId === btn.dataset.soalid && f.assessmentId === a.id);
+    for(const f of relatedFiles){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, ASSESSMENT_FILES_STORE);
+    }
+    allAssessmentFiles = allAssessmentFiles.filter(f => !(f.soalId === btn.dataset.soalid && f.assessmentId === a.id));
     renderSoalList();
     renderScoreTable();
     renderAssessmentList();
@@ -2440,6 +2564,11 @@
     }
     const isOtomatis = a.mode === "otomatis";
     wrap.innerHTML = `
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">
+        ${isOtomatis
+          ? "Isi jawaban mahasiswa di kolom teks — nilai dihitung otomatis dengan mencocokkan ke kunci jawaban. Bisa juga lampirkan file jawaban (misal hasil scan) sebagai bukti."
+          : "Isi jawaban (opsional, sebagai catatan) dan nilai per soal secara manual — total dihitung otomatis dari nilai yang kamu masukkan. Bisa juga lampirkan file jawaban mahasiswa."}
+      </p>
       <table class="score-table">
         <thead>
           <tr>
@@ -2456,8 +2585,24 @@
                 <td>${escapeHtml(st.nama)}</td>
                 ${a.soal.map(s => {
                   const cell = (a.jawaban[st.id] || {})[s.id] || {};
-                  const val = isOtomatis ? (cell.jawaban || "") : (cell.nilai != null ? cell.nilai : "");
-                  return `<td><input type="${isOtomatis ? "text" : "number"}" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(val))}" placeholder="${isOtomatis ? "jawaban" : "nilai"}" /></td>`;
+                  const jawabanVal = cell.jawaban || "";
+                  const nilaiVal = cell.nilai != null ? cell.nilai : "";
+                  const file = allAssessmentFiles.find(f => f.assessmentId === a.id && f.studentId === st.id && f.soalId === s.id);
+                  return `
+                    <td>
+                      <div class="score-cell">
+                        <input type="text" class="jawaban-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(jawabanVal)}" placeholder="jawaban" />
+                        ${!isOtomatis ? `<input type="number" class="nilai-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(nilaiVal))}" placeholder="nilai" />` : ""}
+                        <div class="answer-file-row" data-student="${st.id}" data-soal="${s.id}">
+                          ${file
+                            ? `<span class="af-name" title="${escapeHtml(file.name)}">📎 ${escapeHtml(file.name)}</span>
+                               <button type="button" data-action="open-answer-file" data-fileid="${file.id}">Buka</button>
+                               <button type="button" data-action="delete-answer-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>`
+                            : `<button type="button" data-action="attach-answer-file" data-student="${st.id}" data-soal="${s.id}">📎 Lampirkan File</button>`}
+                        </div>
+                      </div>
+                    </td>
+                  `;
                 }).join("")}
                 <td class="total-cell" data-total-for="${st.id}">${total}</td>
               </tr>
@@ -2469,13 +2614,13 @@
   }
 
   $("scoreTableWrap").addEventListener("change", async (e) => {
-    const input = e.target.closest("input[data-soal]");
+    const input = e.target.closest("input.jawaban-input, input.nilai-input");
     if(!input) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
     const studentId = input.dataset.student;
     const soalId = input.dataset.soal;
-    const field = a.mode === "otomatis" ? "jawaban" : "nilai";
+    const field = input.classList.contains("jawaban-input") ? "jawaban" : "nilai";
     if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
     a.jawaban[studentId][soalId] = { ...a.jawaban[studentId][soalId], [field]: input.value };
     await dbPut(a, ASSESSMENTS_STORE);
@@ -2487,6 +2632,99 @@
     const course = allCourses.find(c => c.id === a.courseId);
     if(course) syncCourseMeta(course);
   });
+
+  $("scoreTableWrap").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    const action = btn.dataset.action;
+    if(action === "attach-answer-file"){
+      answerFileTarget = { assessmentId: activeAssessmentId, studentId: btn.dataset.student, soalId: btn.dataset.soal };
+      $("answerFileInput").click();
+    }
+    if(action === "open-answer-file"){ openAnswerFileInBrowser(btn.dataset.fileid); }
+    if(action === "delete-answer-file"){ deleteAnswerFile(btn.dataset.fileid); }
+  });
+
+  $("answerFileInput").addEventListener("change", async () => {
+    const input = $("answerFileInput");
+    if(!input.files[0] || !answerFileTarget) return;
+    await attachAnswerFile(answerFileTarget.assessmentId, answerFileTarget.studentId, answerFileTarget.soalId, input.files[0]);
+    input.value = "";
+    answerFileTarget = null;
+  });
+
+  async function attachAnswerFile(assessmentId, studentId, soalId, file){
+    const a = allAssessments.find(x => x.id === assessmentId);
+    if(!a) return;
+    const record = {
+      id: uuid(), assessmentId, studentId, soalId, courseId: a.courseId,
+      name: file.name, driveFileId: null, syncStatus: "local", blob: file
+    };
+    await dbPut(record, ASSESSMENT_FILES_STORE);
+    allAssessmentFiles.push(record);
+    renderScoreTable();
+    toast(navigator.onLine ? "File jawaban disimpan, menyinkronkan…" : "File jawaban disimpan lokal (offline)");
+    if(navigator.onLine && accessToken){ syncAssessmentFiles(); }
+  }
+
+  async function deleteAnswerFile(id){
+    const f = allAssessmentFiles.find(x => x.id === id);
+    if(!f) return;
+    if(!confirm(`Hapus lampiran "${f.name}"?`)) return;
+    try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+    await dbDelete(id, ASSESSMENT_FILES_STORE);
+    allAssessmentFiles = allAssessmentFiles.filter(x => x.id !== id);
+    renderScoreTable();
+    toast("Lampiran dihapus");
+  }
+
+  async function openAnswerFileInBrowser(id){
+    const f = allAssessmentFiles.find(x => x.id === id);
+    if(!f) return;
+    try{
+      let blob = f.blob;
+      if(!blob){
+        if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline"); return; }
+        blob = await downloadBlobFromDrive(f.driveFileId);
+        f.blob = blob;
+        await dbPut(f, ASSESSMENT_FILES_STORE);
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")) handleAuthExpired();
+      else toast("Gagal membuka file");
+    }
+  }
+
+  async function syncAssessmentFiles(){
+    if(!accessToken || !navigator.onLine) return;
+    const pending = allAssessmentFiles.filter(f => f.syncStatus === "local");
+    if(pending.length === 0) return;
+    try{
+      await ensureMatkulFolder();
+      for(const f of pending){
+        try{
+          const fileId = await uploadBlobToDrive(f.blob, f.name, matkulFolderId, {
+            recordType: "assessment_answer",
+            courseId: f.courseId,
+            assessmentId: f.assessmentId,
+            studentId: f.studentId,
+            soalId: f.soalId
+          });
+          f.driveFileId = fileId;
+          f.syncStatus = "synced";
+          await dbPut(f, ASSESSMENT_FILES_STORE);
+        }catch(e){
+          if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
+          console.warn("Gagal sync file jawaban", f.name, e);
+        }
+      }
+      renderScoreTable();
+    }catch(e){
+      console.warn("syncAssessmentFiles gagal", e);
+    }
+  }
 
   // ---------- Rekap Nilai Keseluruhan (dengan pembobotan) ----------
   function buildRekapPenilaianData(){
@@ -2738,6 +2976,7 @@
       id: uuid(),
       name: selectedFile.name,
       jenis,
+      matkulId: $("docMatkul").value || null,
       semester: $("semester").value.trim(),
       catatan: $("catatan").value.trim(),
       tanggal: new Date().toISOString().slice(0,10),
@@ -2763,6 +3002,7 @@
   function renderList(){
     const search = $("searchInput").value.trim().toLowerCase();
     const filterJenis = $("filterJenis").value;
+    const filterMatkul = $("filterMatkul").value;
 
     let docs = allDocs.filter(d => {
       const matchSearch = !search ||
@@ -2770,7 +3010,8 @@
         (d.catatan||"").toLowerCase().includes(search) ||
         (d.semester||"").toLowerCase().includes(search);
       const matchJenis = !filterJenis || d.jenis === filterJenis;
-      return matchSearch && matchJenis;
+      const matchMatkul = !filterMatkul || d.matkulId === filterMatkul;
+      return matchSearch && matchJenis && matchMatkul;
     });
 
     docs.sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
@@ -2793,16 +3034,20 @@
         ? '<span class="badge synced">Tersinkron</span>'
         : '<span class="badge pending">Menunggu sync</span>';
 
+      const matkul = d.matkulId ? allCourses.find(c => c.id === d.matkulId) : null;
+
       item.innerHTML = `
         <div class="doc-main">
           <div class="doc-name">${escapeHtml(d.name)}</div>
           <div class="doc-meta">
             <span>${escapeHtml(d.tanggal || "")}</span>
             ${d.semester ? `<span>· ${escapeHtml(d.semester)}</span>` : ""}
+            ${matkul ? `<span>· ${escapeHtml(matkul.nama)}</span>` : ""}
           </div>
           ${d.catatan ? `<div class="doc-note">${escapeHtml(d.catatan)}</div>` : ""}
           <div class="doc-badges">
             <span class="badge type">${escapeHtml(d.jenis)}</span>
+            ${matkul ? `<span class="badge type">${escapeHtml(matkul.nama)}</span>` : ""}
             ${badgeStatus}
           </div>
         </div>
@@ -2814,6 +3059,18 @@
       list.appendChild(item);
     }
   }
+
+  function renderDocMatkulOptions(){
+    const docSel = $("docMatkul");
+    const filterSel = $("filterMatkul");
+    const curDoc = docSel.value, curFilter = filterSel.value;
+    const options = allCourses.map(c => `<option value="${c.id}">${escapeHtml(c.nama)} (${escapeHtml(c.semester)} ${escapeHtml(c.tahunAjaran)})</option>`).join("");
+    docSel.innerHTML = '<option value="">Tidak terkait mata kuliah tertentu</option>' + options;
+    filterSel.innerHTML = '<option value="">Semua mata kuliah</option>' + options;
+    if(allCourses.some(c => c.id === curDoc)) docSel.value = curDoc;
+    if(allCourses.some(c => c.id === curFilter)) filterSel.value = curFilter;
+  }
+  $("filterMatkul").addEventListener("change", renderList);
 
   function escapeHtml(str){
     return String(str).replace(/[&<>"']/g, (c) => ({
@@ -2903,6 +3160,7 @@
     await pullFromDrive();
     await attemptAutoSync();
     await syncCourseFiles();
+    await syncAssessmentFiles();
     await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
@@ -2929,6 +3187,8 @@
     renderAssessmentCategoryTable();
     renderPenilaianCourseOptions();
     $("penilaianEmptyCourse").classList.remove("hidden");
+
+    renderDocMatkulOptions();
 
     if(localStorage.getItem("bkd_has_logged_in") === "1"){
       $("loginCard").classList.add("hidden");
