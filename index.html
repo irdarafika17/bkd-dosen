@@ -406,6 +406,9 @@
   }
   .asscat-row .asscat-name{flex:1;font-size:13px;font-weight:600;}
   .asscat-row input[type=number]{max-width:80px;padding:6px 8px;}
+  .asscat-auto-label{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;}
+  .asscat-auto-label input[type=checkbox]{width:auto;margin:0;}
+  .asscat-weight-input:disabled{background:var(--gray-badge);color:var(--muted);}
   .assessment-detail-inline{border-top:1px dashed var(--line);margin-top:12px;padding-top:12px;}
   .assessment-detail-inline .card-inline-section{margin-bottom:16px;}
   .assessment-detail-inline .card-inline-section h3{font-size:13.5px;margin:0 0 8px;color:var(--navy);}
@@ -2687,15 +2690,18 @@
 
   const ASSESSMENT_CAT_KEY = "bkd_assessment_categories";
   const DEFAULT_ASSESSMENT_CATEGORIES = [
-    { name: "Tugas", weight: 30 },
-    { name: "UTS", weight: 30 },
-    { name: "UAS", weight: 40 }
+    { name: "Tugas", weight: 30, auto: false },
+    { name: "UTS", weight: 30, auto: false },
+    { name: "UAS", weight: 40, auto: false }
   ];
 
   function loadAssessmentCategories(){
     try{
       const raw = localStorage.getItem(ASSESSMENT_CAT_KEY);
-      if(raw){ assessmentCategories = JSON.parse(raw); return; }
+      if(raw){
+        assessmentCategories = JSON.parse(raw).map(c => ({ auto: false, ...c }));
+        return;
+      }
     }catch(e){}
     assessmentCategories = DEFAULT_ASSESSMENT_CATEGORIES.slice();
     saveAssessmentCategories();
@@ -2703,18 +2709,50 @@
   function saveAssessmentCategories(){
     localStorage.setItem(ASSESSMENT_CAT_KEY, JSON.stringify(assessmentCategories));
   }
+
+  // Bobot efektif tiap jenis: kalau ditandai "auto", bobotnya = 100 - total bobot manual lainnya.
+  function getEffectiveWeights(){
+    const manualSum = assessmentCategories
+      .filter(c => !c.auto)
+      .reduce((sum, c) => sum + (Number(c.weight) || 0), 0);
+    const autoCat = assessmentCategories.find(c => c.auto);
+    const autoWeight = autoCat ? Math.max(0, 100 - manualSum) : 0;
+    const map = {};
+    assessmentCategories.forEach(c => {
+      map[c.name] = c.auto ? autoWeight : (Number(c.weight) || 0);
+    });
+    return { map, manualSum, autoWeight, autoCat };
+  }
+
   function renderAssessmentCategoryTable(){
     const el = $("assessmentCategoryTable");
+    const { map, manualSum, autoCat } = getEffectiveWeights();
+
     if(assessmentCategories.length === 0){
       el.innerHTML = '<div class="category-empty">Belum ada jenis penilaian. Tambahkan di bawah.</div>';
     } else {
       el.innerHTML = assessmentCategories.map(c => `
         <div class="asscat-row" data-name="${escapeHtml(c.name)}">
           <span class="asscat-name">${escapeHtml(c.name)}</span>
-          <input type="number" class="asscat-weight-input" data-name="${escapeHtml(c.name)}" value="${c.weight}" min="0" max="100" /> %
+          <label class="asscat-auto-label">
+            <input type="checkbox" class="asscat-auto-toggle" data-name="${escapeHtml(c.name)}" ${c.auto ? "checked" : ""} />
+            Otomatis (sisa dari 100%)
+          </label>
+          <input type="number" class="asscat-weight-input" data-name="${escapeHtml(c.name)}" value="${map[c.name]}" min="0" max="100" ${c.auto ? "disabled" : ""} /> %
           <button type="button" class="icon-btn asscat-remove" data-name="${escapeHtml(c.name)}" style="color:var(--danger);">Hapus</button>
         </div>
       `).join("");
+
+      const totalEffective = Object.values(map).reduce((a,b) => a+b, 0);
+      let warning = "";
+      if(manualSum > 100){
+        warning = `<p style="font-size:12px;color:var(--danger);margin-top:8px;">⚠️ Total bobot manual sudah ${manualSum}% (lebih dari 100%) — bobot otomatis dianggap 0%. Coba kurangi salah satu bobot manual.</p>`;
+      } else if(!autoCat && totalEffective !== 100){
+        warning = `<p style="font-size:12px;color:var(--amber);margin-top:8px;">⚠️ Total bobot saat ini ${totalEffective}% (belum pas 100%). Sesuaikan manual, atau tandai satu jenis sebagai "Otomatis (sisa dari 100%)".</p>`;
+      } else {
+        warning = `<p style="font-size:11.5px;color:var(--muted);margin-top:8px;">Total bobot: ${totalEffective}%</p>`;
+      }
+      el.innerHTML += warning;
     }
     renderAssessmentJenisOptions();
   }
@@ -2722,7 +2760,8 @@
     const sel = $("assessmentJenis");
     if(!sel) return;
     const current = sel.value;
-    sel.innerHTML = assessmentCategories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${c.weight}%)</option>`).join("");
+    const { map } = getEffectiveWeights();
+    sel.innerHTML = assessmentCategories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${map[c.name]}%${c.auto ? " · otomatis" : ""})</option>`).join("");
     if(assessmentCategories.some(c => c.name === current)) sel.value = current;
   }
 
@@ -2733,7 +2772,7 @@
     if(assessmentCategories.some(c => c.name.toLowerCase() === name.toLowerCase())){
       toast("Jenis penilaian itu sudah ada"); return;
     }
-    assessmentCategories.push({ name, weight });
+    assessmentCategories.push({ name, weight, auto: false });
     saveAssessmentCategories();
     renderAssessmentCategoryTable();
     $("newAssessmentCatName").value = "";
@@ -2753,15 +2792,30 @@
     assessmentCategories = assessmentCategories.filter(c => c.name !== name);
     saveAssessmentCategories();
     renderAssessmentCategoryTable();
+    renderRekapPenilaian();
     toast(`Jenis "${name}" dihapus`);
   });
 
   $("assessmentCategoryTable").addEventListener("change", (e) => {
-    const input = e.target.closest(".asscat-weight-input");
-    if(!input) return;
-    const name = input.dataset.name;
-    const cat = assessmentCategories.find(c => c.name === name);
-    if(cat){ cat.weight = Number(input.value) || 0; saveAssessmentCategories(); }
+    const weightInput = e.target.closest(".asscat-weight-input");
+    if(weightInput){
+      const cat = assessmentCategories.find(c => c.name === weightInput.dataset.name);
+      if(cat && !cat.auto){
+        cat.weight = Number(weightInput.value) || 0;
+        saveAssessmentCategories();
+        renderAssessmentCategoryTable();
+        renderRekapPenilaian();
+      }
+      return;
+    }
+    const autoToggle = e.target.closest(".asscat-auto-toggle");
+    if(autoToggle){
+      const name = autoToggle.dataset.name;
+      assessmentCategories.forEach(c => { c.auto = (c.name === name) ? autoToggle.checked : false; });
+      saveAssessmentCategories();
+      renderAssessmentCategoryTable();
+      renderRekapPenilaian();
+    }
   });
 
   // ---------- Course selection for Penilaian ----------
@@ -2822,6 +2876,7 @@
       return;
     }
     $("assessmentEmptyState").classList.add("hidden");
+    const { map: effWeights } = getEffectiveWeights();
     $("assessmentList").innerHTML = items.map(a => {
       const cat = assessmentCategories.find(c => c.name === a.jenis);
       const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
@@ -2831,7 +2886,7 @@
             <div class="doc-name">${escapeHtml(a.nama)}</div>
             <div class="doc-meta"><span>${escapeHtml(a.tanggal)}</span>${a.semester ? `<span>· ${escapeHtml(a.semester)}</span>` : ""}</div>
             <div class="doc-badges">
-              <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${cat.weight}%)` : ""}</span>
+              <span class="badge type">${escapeHtml(a.jenis)}${cat ? ` (${effWeights[a.jenis]}%${cat.auto ? " · otomatis" : ""})` : ""}</span>
               <span class="badge synced">${modeLabel}</span>
               <span class="badge pending">${a.soal.length} soal</span>
             </div>
@@ -3264,24 +3319,30 @@
   function buildRekapPenilaianData(){
     const students = allStudents.filter(s => s.courseId === activePenilaianCourseId);
     const activities = allAssessments.filter(a => a.courseId === activePenilaianCourseId);
-    const headers = ["Nama", ...activities.map(a => `${a.nama} (${a.jenis})`), "Nilai Akhir"];
+    const { map: weights } = getEffectiveWeights();
+
+    // Kolom per JENIS (bukan per aktivitas) — hanya jenis yang benar-benar punya aktivitas.
+    const jenisList = assessmentCategories
+      .map(c => c.name)
+      .filter(name => activities.some(a => a.jenis === name));
+
+    const headers = ["Nama", ...jenisList, "Nilai Akhir"];
     const rows = students.map(st => {
-      const perActivity = activities.map(a => ({ jenis: a.jenis, total: computeStudentTotal(a, st.id) }));
-      const byJenis = {};
-      perActivity.forEach(p => {
-        if(!byJenis[p.jenis]) byJenis[p.jenis] = [];
-        byJenis[p.jenis].push(p.total);
+      const perJenisAvg = {};
+      jenisList.forEach(jenis => {
+        const totals = activities.filter(a => a.jenis === jenis).map(a => computeStudentTotal(a, st.id));
+        perJenisAvg[jenis] = totals.length ? Math.round(totals.reduce((a,b) => a+b, 0) / totals.length) : 0;
       });
+
       let weightedSum = 0, weightUsed = 0;
-      Object.keys(byJenis).forEach(jenis => {
-        const cat = assessmentCategories.find(c => c.name === jenis);
-        const weight = cat ? cat.weight : 0;
-        const avg = byJenis[jenis].reduce((a,b) => a+b, 0) / byJenis[jenis].length;
-        weightedSum += avg * weight;
-        weightUsed += weight;
+      jenisList.forEach(jenis => {
+        const w = weights[jenis] || 0;
+        weightedSum += perJenisAvg[jenis] * w;
+        weightUsed += w;
       });
       const nilaiAkhir = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
-      return [st.nama, ...perActivity.map(p => p.total), nilaiAkhir];
+
+      return [st.nama, ...jenisList.map(j => perJenisAvg[j]), nilaiAkhir];
     });
     return { headers, rows, hasData: students.length > 0 && activities.length > 0 };
   }
