@@ -2993,16 +2993,7 @@
       const m = Number(soal.maxNilai) || 0;
       max += m;
       const cell = (activity.jawaban[studentId] || {})[soal.id];
-      if(activity.mode === "otomatis"){
-        const jawabanText = cell ? cell.jawaban : "";
-        if(jawabanText && jawabanText.trim() !== ""){
-          const sim = textSimilarity(jawabanText, soal.kunci);
-          if(sim >= 0.85) earned += m;
-          else if(sim >= 0.5) earned += m * 0.5;
-        }
-      } else {
-        earned += Number(cell ? cell.nilai : 0) || 0;
-      }
+      earned += Number(cell ? cell.nilai : 0) || 0;
     }
     return max > 0 ? Math.round((earned / max) * 100) : 0;
   }
@@ -3025,9 +3016,9 @@
     wrap.innerHTML = `
       <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">
         ${isOtomatis
-          ? "Isi jawaban mahasiswa di kolom teks — nilai dihitung otomatis dengan mencocokkan ke kunci jawaban. Kolom Nama &amp; Lampiran tetap terlihat saat tabel digeser ke kanan."
-          : "Isi jawaban (opsional, sebagai catatan) dan nilai per soal secara manual — total dihitung otomatis dari nilai yang kamu masukkan. Kolom Nama &amp; Lampiran tetap terlihat saat tabel digeser ke kanan."}
-        Satu file lampiran jawaban cukup diunggah sekali per mahasiswa untuk keseluruhan tugas/ujian ini (bukan per soal).
+          ? "Upload lampiran file jawaban mahasiswa — nilai per soal otomatis terisi dari hasil baca &amp; cocokkan ke kunci jawaban. Kalau hasil bacanya kurang tepat, kamu tetap bisa koreksi nilainya manual di kolom Nilai."
+          : "Isi nilai per soal secara manual — total dihitung otomatis dari nilai yang kamu masukkan."}
+        Kolom Nama &amp; Lampiran tetap terlihat saat tabel digeser ke kanan. Satu file lampiran jawaban cukup diunggah sekali per mahasiswa untuk keseluruhan tugas/ujian ini (bukan per soal).
       </p>
       <div class="score-table-scroll">
         <table class="score-table">
@@ -3057,13 +3048,11 @@
                   </td>
                   ${a.soal.map(s => {
                     const cell = (a.jawaban[st.id] || {})[s.id] || {};
-                    const jawabanVal = cell.jawaban || "";
                     const nilaiVal = cell.nilai != null ? cell.nilai : "";
                     return `
                       <td>
                         <div class="score-cell">
-                          <input type="text" class="jawaban-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(jawabanVal)}" placeholder="jawaban" />
-                          ${!isOtomatis ? `<input type="number" class="nilai-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(nilaiVal))}" placeholder="nilai" />` : ""}
+                          <input type="number" class="nilai-input" data-student="${st.id}" data-soal="${s.id}" value="${escapeHtml(String(nilaiVal))}" placeholder="nilai" min="0" max="${s.maxNilai}" />
                         </div>
                       </td>
                     `;
@@ -3079,15 +3068,14 @@
   }
 
   $("scoreTableWrap").addEventListener("change", async (e) => {
-    const input = e.target.closest("input.jawaban-input, input.nilai-input");
+    const input = e.target.closest("input.nilai-input");
     if(!input) return;
     const a = allAssessments.find(x => x.id === activeAssessmentId);
     if(!a) return;
     const studentId = input.dataset.student;
     const soalId = input.dataset.soal;
-    const field = input.classList.contains("jawaban-input") ? "jawaban" : "nilai";
     if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
-    a.jawaban[studentId][soalId] = { ...a.jawaban[studentId][soalId], [field]: input.value };
+    a.jawaban[studentId][soalId] = { ...a.jawaban[studentId][soalId], nilai: input.value };
     await dbPut(a, ASSESSMENTS_STORE);
 
     const totalCell = document.querySelector(`.total-cell[data-total-for="${studentId}"]`);
@@ -3180,22 +3168,30 @@
       try{
         const text = await extractPlainTextFromAnswerFile(file);
         if(text === null){
-          parseNote = "File ini formatnya tidak bisa dibaca otomatis (misal foto/scan). File tetap tersimpan sebagai lampiran — isi kolom Jawaban secara manual di bawah untuk penilaian otomatis.";
+          parseNote = "File ini formatnya tidak bisa dibaca otomatis (misal foto/scan). File tetap tersimpan sebagai lampiran — isi kolom Nilai secara manual di bawah.";
         } else {
           const answers = splitAnswersByQuestionNumber(text, a.soal.length);
           if(answers){
             if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
             a.soal.forEach((s, idx) => {
-              a.jawaban[studentId][s.id] = { ...a.jawaban[studentId][s.id], jawaban: answers[idx] };
+              const jawabanText = answers[idx];
+              const maxNilai = Number(s.maxNilai) || 0;
+              let nilai = 0;
+              if(jawabanText && jawabanText.trim() !== ""){
+                const sim = textSimilarity(jawabanText, s.kunci);
+                if(sim >= 0.85) nilai = maxNilai;
+                else if(sim >= 0.5) nilai = Math.round(maxNilai * 0.5);
+              }
+              a.jawaban[studentId][s.id] = { jawabanTerbaca: jawabanText, nilai };
             });
             await dbPut(a, ASSESSMENTS_STORE);
-            parseNote = "Jawaban terbaca otomatis dari file dan sudah terisi ke tiap soal — silakan cek, dan koreksi manual kalau ada yang salah baca.";
+            parseNote = "Jawaban terbaca otomatis dari file, dan Nilai per soal sudah terisi berdasarkan kecocokan ke kunci jawaban — silakan cek, dan koreksi manual kalau ada yang salah baca.";
           } else {
-            parseNote = "Sistem tidak bisa memisahkan jawaban per soal secara otomatis dari file ini (penomoran soal di file tidak terdeteksi rapi, misal 1., 2., 3., dst berurutan). File tetap tersimpan — isi kolom Jawaban secara manual di bawah.";
+            parseNote = "Sistem tidak bisa memisahkan jawaban per soal secara otomatis dari file ini (penomoran soal di file tidak terdeteksi rapi, misal 1., 2., 3., dst berurutan). File tetap tersimpan — isi kolom Nilai secara manual di bawah.";
           }
         }
       }catch(err){
-        parseNote = "Gagal membaca isi file untuk pencocokan otomatis (" + err.message + "). File tetap tersimpan sebagai lampiran, isi kolom Jawaban manual di bawah.";
+        parseNote = "Gagal membaca isi file untuk pencocokan otomatis (" + err.message + "). File tetap tersimpan sebagai lampiran, isi kolom Nilai manual di bawah.";
       }
     }
 
