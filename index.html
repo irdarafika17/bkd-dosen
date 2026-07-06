@@ -2854,7 +2854,7 @@
     $("assessmentDetailTitle").textContent = a.nama;
     const modeLabel = a.mode === "otomatis" ? "Otomatis" : "Manual";
     $("assessmentDetailSub").textContent = `${a.jenis} · ${a.tanggal}${a.semester ? " · " + a.semester : ""} · Mode: ${modeLabel}`;
-    $("soalKunciWrap").classList.toggle("hidden", a.mode !== "otomatis");
+    $("soalKunciWrap").classList.remove("hidden");
     renderSoalList();
     renderScoreTable();
   }
@@ -2930,7 +2930,7 @@
       <div class="soal-item" data-soalid="${s.id}">
         <div class="soal-item-main">
           <div class="soal-item-teks"><strong>${idx+1}.</strong> ${escapeHtml(s.teks)} <span class="soal-item-maks">(maks ${s.maxNilai})</span></div>
-          ${a.mode === "otomatis" ? `<div class="soal-item-kunci"><span class="soal-kunci-label">Kunci Jawaban:</span> ${s.kunci ? escapeHtml(s.kunci) : '<em style="color:var(--danger);">belum diisi</em>'}</div>` : ""}
+          <div class="soal-item-kunci"><span class="soal-kunci-label">Kunci Jawaban${a.mode === "otomatis" ? "" : " (referensi)"}:</span> ${s.kunci ? escapeHtml(s.kunci) : '<em style="color:var(--danger);">belum diisi</em>'}</div>
         </div>
         <button class="icon-btn" data-action="delete-soal" data-soalid="${s.id}" style="color:var(--danger)">Hapus</button>
       </div>
