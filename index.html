@@ -1021,6 +1021,8 @@
   let tokenClient = null;
   let rootFolderId = localStorage.getItem("bkd_root_folder_id") || null;
   let matkulFolderId = localStorage.getItem("bkd_matkul_folder_id") || null;
+  if(rootFolderId === "undefined" || rootFolderId === "null"){ rootFolderId = null; localStorage.removeItem("bkd_root_folder_id"); }
+  if(matkulFolderId === "undefined" || matkulFolderId === "null"){ matkulFolderId = null; localStorage.removeItem("bkd_matkul_folder_id"); }
   let selectedFile = null;
   let allDocs = [];
 
@@ -1280,9 +1282,11 @@
       }
     }catch(e){ /* non-critical */ }
 
-    if(!rootFolderId){
-      rootFolderId = await findOrCreateFolder(ROOT_FOLDER_NAME, null);
-      localStorage.setItem("bkd_root_folder_id", rootFolderId);
+    try{
+      await ensureRootFolder();
+    }catch(e){
+      console.warn("Gagal menyiapkan folder root BKD Dosen", e);
+      toast(`Gagal menyiapkan folder Drive: ${e.message}`, 7000);
     }
 
     await pullFromDrive();
@@ -1311,6 +1315,10 @@
     let q = `name='${name.replace(/'/g,"\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     if(parentId) q += ` and '${parentId}' in parents`;
     const listRes = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+    if(!listRes.ok){
+      const errBody = await listRes.text();
+      throw new Error(`Gagal cari folder "${name}" (HTTP ${listRes.status}): ${errBody.slice(0,200)}`);
+    }
     const listData = await listRes.json();
     if(listData.files && listData.files.length > 0) return listData.files[0].id;
 
@@ -1321,7 +1329,14 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+    if(!createRes.ok){
+      const errBody = await createRes.text();
+      throw new Error(`Gagal buat folder "${name}" (HTTP ${createRes.status}): ${errBody.slice(0,200)}`);
+    }
     const createData = await createRes.json();
+    if(!createData.id){
+      throw new Error(`Folder "${name}" dibuat tapi tidak dapat ID dari Google — respons tidak sesuai.`);
+    }
     return createData.id;
   }
 
@@ -1479,6 +1494,7 @@
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("Gagal sync metadata mata kuliah", course.nama, e);
+      toast(`Gagal sinkron data "${course.nama}": ${e.message}`, 6000);
     }
   }
 
@@ -1601,8 +1617,9 @@
       if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
     }catch(e){
-      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("pullMataKuliahFromDrive gagal", e);
+      toast(`Gagal menarik data mata kuliah dari Drive: ${e.message}`, 6000);
     }
   }
 
@@ -1788,6 +1805,7 @@
     if(!accessToken || !navigator.onLine) return;
     const pending = allCourseFiles.filter(f => f.syncStatus === "local");
     if(pending.length === 0) return;
+    const errors = [];
     try{
       await ensureMatkulFolder();
       for(const f of pending){
@@ -1808,12 +1826,15 @@
         }catch(e){
           if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
           console.warn("Gagal sync file mata kuliah", f.name, e);
+          errors.push(`${f.name}: ${e.message}`);
         }
       }
       renderRpsList();
       renderMeetingList();
+      if(errors.length > 0){ toast(`Gagal sync ${errors.length} file mata kuliah — ${errors[0]}`, 6000); }
     }catch(e){
       console.warn("syncCourseFiles gagal", e);
+      toast(`Gagal menyiapkan folder Drive untuk file mata kuliah: ${e.message}`, 6000);
     }
   }
 
@@ -2610,6 +2631,7 @@
     if(!accessToken || !navigator.onLine) return;
     const pending = allAttendanceFiles.filter(f => f.syncStatus === "local");
     if(pending.length === 0) return;
+    const errors = [];
     try{
       await ensureMatkulFolder();
       for(const f of pending){
@@ -2625,11 +2647,14 @@
         }catch(e){
           if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
           console.warn("Gagal sync file absensi", f.name, e);
+          errors.push(`${f.name}: ${e.message}`);
         }
       }
       renderAttendanceFileCurrent();
+      if(errors.length > 0){ toast(`Gagal sync ${errors.length} file absensi — ${errors[0]}`, 6000); }
     }catch(e){
       console.warn("syncAttendanceFiles gagal", e);
+      toast(`Gagal menyiapkan folder Drive untuk file absensi: ${e.message}`, 6000);
     }
   }
 
@@ -3290,6 +3315,7 @@
     if(!accessToken || !navigator.onLine) return;
     const pending = allAssessmentFiles.filter(f => f.syncStatus === "local");
     if(pending.length === 0) return;
+    const errors = [];
     try{
       await ensureMatkulFolder();
       for(const f of pending){
@@ -3307,11 +3333,14 @@
         }catch(e){
           if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
           console.warn("Gagal sync file jawaban", f.name, e);
+          errors.push(`${f.name}: ${e.message}`);
         }
       }
       renderScoreTable();
+      if(errors.length > 0){ toast(`Gagal sync ${errors.length} file jawaban — ${errors[0]}`, 6000); }
     }catch(e){
       console.warn("syncAssessmentFiles gagal", e);
+      toast(`Gagal menyiapkan folder Drive untuk file jawaban: ${e.message}`, 6000);
     }
   }
 
@@ -3488,8 +3517,9 @@
       }
       allDocs = await dbGetAll();
     }catch(e){
-      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); }
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("pullFromDrive gagal", e);
+      toast(`Gagal menarik dokumen dari Drive: ${e.message}`, 6000);
     }
   }
 
