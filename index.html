@@ -3493,11 +3493,20 @@
     }
   }
 
+  async function ensureRootFolder(){
+    if(rootFolderId) return rootFolderId;
+    rootFolderId = await findOrCreateFolder(ROOT_FOLDER_NAME, null);
+    localStorage.setItem("bkd_root_folder_id", rootFolderId);
+    return rootFolderId;
+  }
+
   async function attemptAutoSync(){
     if(!accessToken || !navigator.onLine) return;
     const pending = allDocs.filter(d => d.syncStatus === "local");
     if(pending.length === 0){ updateSyncBadge(); return; }
     updateSyncBadge(true);
+    try{ await ensureRootFolder(); }catch(e){ console.warn("Gagal siapkan folder root", e); }
+    const errors = [];
     for(const doc of pending){
       try{
         const fileId = await uploadDocToDrive(doc);
@@ -3507,11 +3516,15 @@
       }catch(e){
         if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
         console.warn("Gagal sync dokumen", doc.name, e);
+        errors.push(`${doc.name}: ${e.message}`);
       }
     }
     allDocs = await dbGetAll();
     updateSyncBadge();
     renderList();
+    if(errors.length > 0){
+      toast(`Gagal sync ${errors.length} dokumen — ${errors[0]}`, 6000);
+    }
   }
 
   function updateSyncBadge(forceSyncing=false){
