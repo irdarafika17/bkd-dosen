@@ -516,6 +516,8 @@
     box-shadow:0 8px 24px rgba(0,0,0,0.25);
     z-index:50;opacity:0;pointer-events:none;
     transition:opacity .25s ease, transform .25s ease;
+    max-width:min(560px, 90vw);word-wrap:break-word;white-space:pre-wrap;
+    text-align:left;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
 
@@ -1359,7 +1361,10 @@
       method: "POST",
       body: form
     });
-    if(!res.ok) throw new Error("UPLOAD_FAILED");
+    if(!res.ok){
+      const errBody = await res.text();
+      throw new Error(`HTTP ${res.status} — ${errBody.slice(0,300)}`);
+    }
     const data = await res.json();
     return data.id;
   }
@@ -1373,7 +1378,10 @@
       method: "POST",
       body: form
     });
-    if(!res.ok) throw new Error("UPLOAD_FAILED");
+    if(!res.ok){
+      const errBody = await res.text();
+      throw new Error(`HTTP ${res.status} — ${errBody.slice(0,300)}`);
+    }
     const data = await res.json();
     return data.id;
   }
@@ -3553,7 +3561,7 @@
     updateSyncBadge();
     renderList();
     if(errors.length > 0){
-      toast(`Gagal sync ${errors.length} dokumen — ${errors[0]}`, 6000);
+      toast(`Gagal sync ${errors.length} dokumen — ${errors[0]}`, 12000);
     }
   }
 
