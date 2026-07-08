@@ -918,6 +918,10 @@
 
           <section class="card">
             <h2>Daftar Soal</h2>
+            <div id="soalExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportSoalWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportSoalPdfBtn">🖨️ Export PDF</button>
+            </div>
             <div id="soalList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;"></div>
             <form id="soalForm">
               <div class="form-grid">
@@ -1292,11 +1296,12 @@
     }
 
     await pullFromDrive();
+    await pullMataKuliahFromDrive();
+    await migrateOldDriveStructure();
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
     await syncAttendanceFiles();
-    await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
   }
@@ -1343,14 +1348,20 @@
   }
 
   async function uploadDocToDrive(doc){
+    const linkedCourse = doc.matkulId ? allCourses.find(c => c.id === doc.matkulId) : null;
+    const folderLabel = linkedCourse ? semesterLabel(linkedCourse) : (doc.semester && doc.semester.trim() ? doc.semester.trim() : "Tanpa Semester");
+    const targetFolderId = await ensureDokumenFolder(folderLabel);
+
     const metadata = {
       name: doc.name,
-      parents: [rootFolderId],
+      parents: [targetFolderId],
       properties: {
         jenis: doc.jenis,
         semester: doc.semester || "",
         catatan: doc.catatan || "",
-        tanggal: doc.tanggal
+        tanggal: doc.tanggal,
+        matkulId: doc.matkulId || "",
+        recordType: "document"
       }
     };
     const form = new FormData();
@@ -1393,11 +1404,67 @@
     return matkulFolderId;
   }
 
-  async function listFilesInDrive(){
-    const q = `'${rootFolderId}' in parents and trashed=false`;
-    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,properties,size)&pageSize=1000`);
+  // ---------- Struktur folder bertingkat (Semester/Tahun Ajaran > Mata Kuliah > ...) ----------
+  const folderPathCache = {};
+  async function ensureFolderPath(parts, rootId){
+    const key = parts.join(" / ");
+    if(folderPathCache[key]) return folderPathCache[key];
+    let currentParent = rootId;
+    for(const part of parts){
+      currentParent = await findOrCreateFolder(part, currentParent);
+    }
+    folderPathCache[key] = currentParent;
+    return currentParent;
+  }
+  function semesterLabel(course){
+    if(!course) return "Tanpa Semester";
+    return `${course.semester || ""} ${course.tahunAjaran || ""}`.trim() || "Tanpa Semester";
+  }
+  async function ensureDokumenFolder(semesterText){
+    const label = semesterText && semesterText.trim() ? semesterText.trim() : "Tanpa Semester";
+    return ensureFolderPath(["Dokumen BKD", label], rootFolderId);
+  }
+  async function ensureCourseKindFolder(course, kindLabel){
+    return ensureFolderPath(["Mata Kuliah", semesterLabel(course), course.nama, kindLabel], rootFolderId);
+  }
+  async function ensureCourseRootFolder(course){
+    return ensureFolderPath(["Mata Kuliah", semesterLabel(course), course.nama], rootFolderId);
+  }
+  async function ensureAbsensiFolder(course){
+    return ensureFolderPath(["Absensi", semesterLabel(course)], rootFolderId);
+  }
+  async function ensurePenilaianFolder(course, assessmentNama){
+    return ensureFolderPath(["Penilaian", semesterLabel(course), course.nama, assessmentNama], rootFolderId);
+  }
+
+  async function moveFileInDrive(fileId, newParentId, oldParentId){
+    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}&removeParents=${oldParentId}&fields=id,parents`, {
+      method: "PATCH"
+    });
+    if(!res.ok){
+      const errBody = await res.text();
+      throw new Error(`Gagal pindah file (HTTP ${res.status}): ${errBody.slice(0,200)}`);
+    }
+    return await res.json();
+  }
+
+  async function listAllAppFiles(){
+    const q = `trashed=false`;
+    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,properties,size,parents)&pageSize=1000`);
+    if(!res.ok){
+      const errBody = await res.text();
+      throw new Error(`Gagal ambil daftar file dari Drive (HTTP ${res.status}): ${errBody.slice(0,200)}`);
+    }
     const data = await res.json();
     return data.files || [];
+  }
+
+  async function listFilesInDrive(){
+    const all = await listAllAppFiles();
+    return all.filter(f => {
+      const props = f.properties || {};
+      return props.recordType === "document" || (!props.recordType && !props.kind);
+    });
   }
 
   async function downloadBlobFromDrive(fileId){
@@ -1421,13 +1488,6 @@
     });
     if(!res.ok) throw new Error("UPDATE_FAILED");
     return await res.json();
-  }
-
-  async function listFilesInFolder(folderId){
-    const q = `'${folderId}' in parents and trashed=false`;
-    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,properties,size)&pageSize=1000`);
-    const data = await res.json();
-    return data.files || [];
   }
 
   // ====================================================================
@@ -1480,6 +1540,7 @@
     if(!accessToken || !navigator.onLine) return;
     try{
       await ensureMatkulFolder();
+      const courseFolderId = await ensureCourseRootFolder(course);
       const payload = {
         course: { id: course.id, nama: course.nama, semester: course.semester, tahunAjaran: course.tahunAjaran },
         meetings: allMeetings.filter(m => m.courseId === course.id).map(m => ({ id: m.id, pertemuanKe: m.pertemuanKe, tanggal: m.tanggal })),
@@ -1492,7 +1553,7 @@
       if(course.metaDriveFileId){
         await updateFileContentInDrive(course.metaDriveFileId, blob);
       } else {
-        const fileId = await uploadBlobToDrive(blob, `__meta__${course.id}.json`, matkulFolderId, {
+        const fileId = await uploadBlobToDrive(blob, `__meta__${course.id}.json`, courseFolderId, {
           kind: "course_meta",
           courseId: course.id
         });
@@ -1517,7 +1578,11 @@
     if(!accessToken || !navigator.onLine) return;
     try{
       await ensureMatkulFolder();
-      const files = await listFilesInFolder(matkulFolderId);
+      const allFiles = await listAllAppFiles();
+      const files = allFiles.filter(f => {
+        const props = f.properties || {};
+        return props.kind === "course_meta" || !!props.courseId || props.recordType === "attendance_file" || props.recordType === "assessment_answer";
+      });
 
       // 1) Metadata mata kuliah (nama, pertemuan, mahasiswa)
       const metaFiles = files.filter(f => (f.properties || {}).kind === "course_meta");
@@ -1575,7 +1640,7 @@
       // 2) File RPS & materi/slide yang belum ada lokal
       const courseFileEntries = files.filter(f => {
         const props = f.properties || {};
-        return props.kind !== "course_meta" && props.recordType !== "assessment_answer";
+        return props.kind !== "course_meta" && props.recordType !== "assessment_answer" && props.recordType !== "attendance_file";
       });
       const existingDriveIds = new Set(allCourseFiles.map(f => f.driveFileId).filter(Boolean));
       for(const f of courseFileEntries){
@@ -1594,6 +1659,25 @@
         };
         await dbPut(record, COURSE_FILES_STORE);
         allCourseFiles.push(record);
+      }
+
+      // 2b) File absensi asli yang belum ada lokal
+      const attendanceFileEntries = files.filter(f => (f.properties || {}).recordType === "attendance_file");
+      const existingAttFileDriveIds = new Set(allAttendanceFiles.map(f => f.driveFileId).filter(Boolean));
+      for(const f of attendanceFileEntries){
+        if(existingAttFileDriveIds.has(f.id)) continue;
+        const props = f.properties || {};
+        const record = {
+          id: uuid(),
+          courseId: props.courseId || null,
+          meetingId: props.meetingId || null,
+          name: f.name,
+          driveFileId: f.id,
+          syncStatus: "synced",
+          blob: null
+        };
+        await dbPut(record, ATTENDANCE_FILES_STORE);
+        allAttendanceFiles.push(record);
       }
 
       // 3) File jawaban mahasiswa (lampiran penilaian) yang belum ada lokal
@@ -1620,7 +1704,7 @@
       renderCourseList();
       if(activeCourseId){ renderRpsList(); renderMeetingList(); }
       renderAbsensiCourseOptions();
-      if(activeAbsensiCourseId){ updateAbsensiCourseBadge(); renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); }
+      if(activeAbsensiCourseId){ updateAbsensiCourseBadge(); renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); renderAttendanceFileCurrent(); }
       renderPenilaianCourseOptions();
       if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
@@ -1628,6 +1712,74 @@
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("pullMataKuliahFromDrive gagal", e);
       toast(`Gagal menarik data mata kuliah dari Drive: ${e.message}`, 6000);
+    }
+  }
+
+  // ---------- Migrasi otomatis: rapikan file lama (struktur flat) ke folder bertingkat baru ----------
+  async function migrateOldDriveStructure(){
+    if(localStorage.getItem("bkd_migrated_v2") === "1") return;
+    if(!accessToken || !navigator.onLine) return;
+    try{
+      await ensureMatkulFolder();
+      const allFiles = await listAllAppFiles();
+      let movedCount = 0;
+      const errors = [];
+
+      const needsMigration = allFiles.some(f => {
+        const parent = (f.parents && f.parents[0]) || null;
+        return parent === rootFolderId || parent === matkulFolderId;
+      });
+      if(needsMigration){ toast("Merapikan folder Drive ke struktur baru, mohon tunggu…", 5000); }
+
+      for(const f of allFiles){
+        const props = f.properties || {};
+        const oldParent = (f.parents && f.parents[0]) || null;
+        if(!oldParent) continue;
+        if(oldParent !== rootFolderId && oldParent !== matkulFolderId) continue;
+
+        try{
+          let targetFolderId = null;
+
+          if(props.recordType === "document" || (!props.recordType && !props.kind && oldParent === rootFolderId)){
+            const course = props.matkulId ? allCourses.find(c => c.id === props.matkulId) : null;
+            const label = course ? semesterLabel(course) : (props.semester && props.semester.trim() ? props.semester.trim() : "Tanpa Semester");
+            targetFolderId = await ensureDokumenFolder(label);
+          } else if(props.kind === "course_meta"){
+            const course = allCourses.find(c => c.id === props.courseId);
+            if(course) targetFolderId = await ensureCourseRootFolder(course);
+          } else if(props.recordType === "attendance_file"){
+            const course = allCourses.find(c => c.id === props.courseId);
+            if(course) targetFolderId = await ensureAbsensiFolder(course);
+          } else if(props.recordType === "assessment_answer"){
+            const course = allCourses.find(c => c.id === props.courseId);
+            const assessment = allAssessments.find(a => a.id === props.assessmentId);
+            if(course && assessment) targetFolderId = await ensurePenilaianFolder(course, assessment.nama);
+          } else if(props.kind && COURSE_FILE_KIND_FOLDER[props.kind]){
+            const course = allCourses.find(c => c.id === props.courseId);
+            if(course) targetFolderId = await ensureCourseKindFolder(course, COURSE_FILE_KIND_FOLDER[props.kind]);
+          }
+
+          if(targetFolderId && targetFolderId !== oldParent){
+            await moveFileInDrive(f.id, targetFolderId, oldParent);
+            movedCount++;
+          }
+        }catch(e){
+          errors.push(`${f.name}: ${e.message}`);
+          console.warn("Gagal migrasi file", f.name, e);
+        }
+      }
+
+      localStorage.setItem("bkd_migrated_v2", "1");
+      if(movedCount > 0){
+        toast(`Selesai merapikan ${movedCount} file ke folder baru di Drive.`, 6000);
+      }
+      if(errors.length > 0){
+        console.warn("Beberapa file gagal dimigrasi:", errors);
+        toast(`${errors.length} file gagal dirapikan otomatis — ${errors[0]}`, 8000);
+      }
+    }catch(e){
+      console.warn("migrateOldDriveStructure gagal total", e);
+      toast(`Gagal merapikan folder Drive: ${e.message}`, 6000);
     }
   }
 
@@ -1809,6 +1961,13 @@
     if(navigator.onLine && accessToken){ syncCourseFiles(); }
   }
 
+  const COURSE_FILE_KIND_FOLDER = {
+    "rps": "RPS",
+    "Materi Ajar": "Materi",
+    "Slide": "Slide",
+    "Foto Dokumentasi": "Foto Dokumentasi"
+  };
+
   async function syncCourseFiles(){
     if(!accessToken || !navigator.onLine) return;
     const pending = allCourseFiles.filter(f => f.syncStatus === "local");
@@ -1820,7 +1979,11 @@
         try{
           const course = allCourses.find(c => c.id === f.courseId);
           const meeting = f.meetingId ? allMeetings.find(m => m.id === f.meetingId) : null;
-          const fileId = await uploadBlobToDrive(f.blob, f.name, matkulFolderId, {
+          const kindFolderLabel = COURSE_FILE_KIND_FOLDER[f.kind] || f.kind || "Lainnya";
+          const targetFolderId = course
+            ? await ensureCourseKindFolder(course, kindFolderLabel)
+            : await ensureMatkulFolder();
+          const fileId = await uploadBlobToDrive(f.blob, f.name, targetFolderId, {
             courseId: f.courseId,
             courseNama: course ? course.nama : "",
             meetingId: f.meetingId || "",
@@ -2644,7 +2807,9 @@
       await ensureMatkulFolder();
       for(const f of pending){
         try{
-          const fileId = await uploadBlobToDrive(f.blob, f.name, matkulFolderId, {
+          const course = allCourses.find(c => c.id === f.courseId);
+          const targetFolderId = course ? await ensureAbsensiFolder(course) : await ensureMatkulFolder();
+          const fileId = await uploadBlobToDrive(f.blob, f.name, targetFolderId, {
             recordType: "attendance_file",
             courseId: f.courseId,
             meetingId: f.meetingId
@@ -3328,7 +3493,12 @@
       await ensureMatkulFolder();
       for(const f of pending){
         try{
-          const fileId = await uploadBlobToDrive(f.blob, f.name, matkulFolderId, {
+          const course = allCourses.find(c => c.id === f.courseId);
+          const assessment = allAssessments.find(a => a.id === f.assessmentId);
+          const targetFolderId = (course && assessment)
+            ? await ensurePenilaianFolder(course, assessment.nama)
+            : await ensureMatkulFolder();
+          const fileId = await uploadBlobToDrive(f.blob, f.name, targetFolderId, {
             recordType: "assessment_answer",
             courseId: f.courseId,
             assessmentId: f.assessmentId,
@@ -3498,6 +3668,27 @@
     if(!hasData){ toast("Belum ada data untuk diexport"); return; }
     const course = allCourses.find(c => c.id === activePenilaianCourseId);
     exportToPDF(`Rekap_Nilai_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}.pdf`, `Rekap Nilai — ${course?.nama||""}`, headers, rows);
+  });
+
+  // ---------- Export Soal & Jawaban ----------
+  function buildSoalExportData(){
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a || a.soal.length === 0) return { headers: [], rows: [], hasData: false, a: null };
+    const headers = ["No", "Soal", "Kunci Jawaban", "Nilai Maksimal"];
+    const rows = a.soal.map((s, idx) => [idx+1, s.teks, s.kunci || "-", s.maxNilai]);
+    return { headers, rows, hasData: true, a };
+  }
+  $("exportSoalWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData, a } = buildSoalExportData();
+    if(!hasData){ toast("Belum ada soal untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === a.courseId);
+    exportToWord(`Soal_${(a.nama||"ujian").replace(/\s+/g,"_")}.doc`, `Daftar Soal — ${a.nama} (${course?.nama||""})`, headers, rows);
+  });
+  $("exportSoalPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData, a } = buildSoalExportData();
+    if(!hasData){ toast("Belum ada soal untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === a.courseId);
+    exportToPDF(`Soal_${(a.nama||"ujian").replace(/\s+/g,"_")}.pdf`, `Daftar Soal — ${a.nama} (${course?.nama||""})`, headers, rows);
   });
 
   // ====================================================================
@@ -3804,11 +3995,12 @@
     if(!navigator.onLine){ toast("Tidak ada koneksi internet"); return; }
     toast("Menyinkronkan…");
     await pullFromDrive();
+    await pullMataKuliahFromDrive();
+    await migrateOldDriveStructure();
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
     await syncAttendanceFiles();
-    await pullMataKuliahFromDrive();
     await syncAllCourseMeta();
     renderList();
     toast("Sinkronisasi selesai");
