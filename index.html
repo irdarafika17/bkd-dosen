@@ -779,6 +779,11 @@
             <button type="button" id="studentUploadBtn" class="btn-primary">Impor Daftar Mahasiswa</button>
           </div>
           <div id="studentTableWrap" style="margin-top:14px;">
+            <div id="studentExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportStudentExcelBtn">📊 Export Excel</button>
+              <button type="button" class="btn-outline" id="exportStudentWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportStudentPdfBtn">🖨️ Export PDF</button>
+            </div>
             <details id="studentListDetails">
               <summary><span id="studentCountLabel">Belum ada mahasiswa</span> — klik untuk lihat/sembunyikan daftar</summary>
               <div class="student-table-scroll" id="studentTableScroll"></div>
@@ -2377,6 +2382,38 @@
       </table>
     `;
   }
+
+  function buildStudentExportData(){
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+    const headers = ["Nama", "NIM", "Jurusan", "Semester", "No HP"];
+    const rows = students.map(s => [s.nama, s.nim, s.jurusan, s.semester, s.noHp]);
+    return { headers, rows, hasData: students.length > 0 };
+  }
+  function studentExportContext(){
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    return {
+      title: `Daftar Mahasiswa — ${course?.nama || ""}`,
+      filename: `Daftar_Mahasiswa_${(course?.nama || "matakuliah").replace(/\s+/g,"_")}`
+    };
+  }
+  $("exportStudentExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildStudentExportData();
+    if(!hasData){ toast("Belum ada data mahasiswa untuk diexport"); return; }
+    const { filename } = studentExportContext();
+    exportToExcel(`${filename}.xlsx`, "Daftar Mahasiswa", headers, rows);
+  });
+  $("exportStudentWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildStudentExportData();
+    if(!hasData){ toast("Belum ada data mahasiswa untuk diexport"); return; }
+    const { title, filename } = studentExportContext();
+    exportToWord(`${filename}.doc`, title, headers, rows);
+  });
+  $("exportStudentPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildStudentExportData();
+    if(!hasData){ toast("Belum ada data mahasiswa untuk diexport"); return; }
+    const { title, filename } = studentExportContext();
+    exportToPDF(`${filename}.pdf`, title, headers, rows);
+  });
 
   function updateAbsensiCourseBadge(){
     const badge = $("absensiCourseBadge");
