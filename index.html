@@ -3447,12 +3447,14 @@
   function splitAnswersByQuestionNumber(text, soalCount){
     if(!text || soalCount <= 0) return { answers: null, foundCount: 0 };
     const lines = text.split(/\r?\n/);
-    const pattern = /^\s*(?:jawaban\s*(?:no\.?|nomor)?\s*|soal\s*(?:no\.?|nomor)?\s*)?(\d{1,2})\s*[\.\)\:\-]\s*/i;
+    // Wajib ada salah satu: kata "soal"/"jawaban" di depan angka, ATAU tanda baca setelah angka.
+    // Ini mencegah angka acak di tengah teks (misal nomor halaman) salah dianggap penanda soal.
+    const pattern = /^\s*(?:(?:jawaban|soal)\s*(?:no\.?|nomor)?\s*(\d{1,2})\s*[\.\)\:\-]?\s*|(\d{1,2})\s*[\.\)\:\-]\s*)/i;
     const markers = [];
     lines.forEach((line, idx) => {
       const m = line.match(pattern);
       if(m){
-        const num = parseInt(m[1], 10);
+        const num = parseInt(m[1] || m[2], 10);
         if(num >= 1 && num <= soalCount){
           markers.push({ idx, num });
         }
@@ -3467,13 +3469,21 @@
     }
     orderedMarkers.sort((a,b) => a.idx - b.idx);
 
+    const jawabanMarkerPattern = /jawaban\s*[:\-]?\s*/i;
     const answers = new Array(soalCount).fill("");
     for(let i=0;i<orderedMarkers.length;i++){
       const start = orderedMarkers[i].idx;
       const end = (i+1 < orderedMarkers.length) ? orderedMarkers[i+1].idx : lines.length;
       const segment = lines.slice(start, end);
       segment[0] = segment[0].replace(pattern, "");
-      answers[orderedMarkers[i].num - 1] = segment.join(" ").trim();
+      let segmentText = segment.join(" ").trim();
+      // Kalau ada penanda "Jawaban:" di dalam segmen, ambil cuma teks SETELAH itu
+      // (buang pertanyaan yang ditulis ulang sebelum jawabannya).
+      const jm = segmentText.match(jawabanMarkerPattern);
+      if(jm){
+        segmentText = segmentText.slice(jm.index + jm[0].length).trim();
+      }
+      answers[orderedMarkers[i].num - 1] = segmentText;
     }
     return { answers, foundCount: orderedMarkers.length };
   }
