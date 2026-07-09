@@ -824,6 +824,11 @@
 
           <section class="card">
             <h2>Tabel Status Kehadiran</h2>
+            <div id="absensiFillExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportAbsensiFillExcelBtn">📊 Export Excel</button>
+              <button type="button" class="btn-outline" id="exportAbsensiFillWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportAbsensiFillPdfBtn">🖨️ Export PDF</button>
+            </div>
             <div id="absensiFillTableWrap"></div>
           </section>
         </div>
@@ -946,6 +951,11 @@
 
           <section class="card">
             <h2>Input Nilai Mahasiswa</h2>
+            <div id="scoreTableExportBtns" class="filters" style="margin-bottom:12px;">
+              <button type="button" class="btn-outline" id="exportScoreTableExcelBtn">📊 Export Excel</button>
+              <button type="button" class="btn-outline" id="exportScoreTableWordBtn">📄 Export Word</button>
+              <button type="button" class="btn-outline" id="exportScoreTablePdfBtn">🖨️ Export PDF</button>
+            </div>
             <div id="scoreTableWrap"></div>
           </section>
         </div>
@@ -3689,6 +3699,78 @@
     if(!hasData){ toast("Belum ada soal untuk diexport"); return; }
     const course = allCourses.find(c => c.id === a.courseId);
     exportToPDF(`Soal_${(a.nama||"ujian").replace(/\s+/g,"_")}.pdf`, `Daftar Soal — ${a.nama} (${course?.nama||""})`, headers, rows);
+  });
+
+  // ---------- Export Tabel Status Kehadiran (per pertemuan) ----------
+  function buildAbsensiFillExportData(){
+    const students = allStudents.filter(s => s.courseId === activeAbsensiCourseId);
+    const headers = ["Nama", "NIM", "Status"];
+    const rows = students.map(s => {
+      const att = allAttendance.find(a => a.meetingId === activeAbsensiMeetingId && a.studentId === s.id);
+      return [s.nama, s.nim, att ? att.status : "-"];
+    });
+    return { headers, rows, hasData: students.length > 0 };
+  }
+  function absensiFillExportContext(){
+    const course = allCourses.find(c => c.id === activeAbsensiCourseId);
+    const meeting = allMeetings.find(m => m.id === activeAbsensiMeetingId);
+    const title = `Status Kehadiran — Pertemuan ke-${meeting?.pertemuanKe||""} (${course?.nama||""})`;
+    const filename = `Absensi_Pertemuan${meeting?.pertemuanKe||""}_${(course?.nama||"matakuliah").replace(/\s+/g,"_")}`;
+    return { title, filename };
+  }
+  $("exportAbsensiFillExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildAbsensiFillExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const { title, filename } = absensiFillExportContext();
+    exportToExcel(`${filename}.xlsx`, "Status Kehadiran", headers, rows);
+  });
+  $("exportAbsensiFillWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildAbsensiFillExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const { title, filename } = absensiFillExportContext();
+    exportToWord(`${filename}.doc`, title, headers, rows);
+  });
+  $("exportAbsensiFillPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildAbsensiFillExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const { title, filename } = absensiFillExportContext();
+    exportToPDF(`${filename}.pdf`, title, headers, rows);
+  });
+
+  // ---------- Export Input Nilai Mahasiswa (per ujian) ----------
+  function buildScoreTableExportData(){
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!a) return { headers: [], rows: [], hasData: false, a: null };
+    const students = allStudents.filter(s => s.courseId === a.courseId);
+    if(students.length === 0 || a.soal.length === 0) return { headers: [], rows: [], hasData: false, a };
+    const headers = ["Nama", ...a.soal.map((s,idx) => `Soal ${idx+1} (${s.maxNilai})`), "Total (0-100)"];
+    const rows = students.map(st => {
+      const total = computeStudentTotal(a, st.id);
+      const nilaiPerSoal = a.soal.map(s => {
+        const cell = (a.jawaban[st.id] || {})[s.id] || {};
+        return cell.nilai != null ? cell.nilai : 0;
+      });
+      return [st.nama, ...nilaiPerSoal, total];
+    });
+    return { headers, rows, hasData: true, a };
+  }
+  $("exportScoreTableExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData, a } = buildScoreTableExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === a.courseId);
+    exportToExcel(`Nilai_${(a.nama||"ujian").replace(/\s+/g,"_")}.xlsx`, "Input Nilai", headers, rows);
+  });
+  $("exportScoreTableWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData, a } = buildScoreTableExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === a.courseId);
+    exportToWord(`Nilai_${(a.nama||"ujian").replace(/\s+/g,"_")}.doc`, `Input Nilai — ${a.nama} (${course?.nama||""})`, headers, rows);
+  });
+  $("exportScoreTablePdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData, a } = buildScoreTableExportData();
+    if(!hasData){ toast("Belum ada data untuk diexport"); return; }
+    const course = allCourses.find(c => c.id === a.courseId);
+    exportToPDF(`Nilai_${(a.nama||"ujian").replace(/\s+/g,"_")}.pdf`, `Input Nilai — ${a.nama} (${course?.nama||""})`, headers, rows);
   });
 
   // ====================================================================
