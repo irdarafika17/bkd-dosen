@@ -3342,6 +3342,7 @@
                       ${file
                         ? `<span class="af-name" title="${escapeHtml(file.name)}">📎 ${escapeHtml(file.name)}</span>
                            <button type="button" data-action="open-answer-file" data-fileid="${file.id}">Buka</button>
+                           ${isOtomatis ? `<button type="button" data-action="regrade-answer-file" data-fileid="${file.id}" data-student="${st.id}">🔄 Baca Ulang Otomatis</button>` : ""}
                            <button type="button" data-action="delete-answer-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>`
                         : `<button type="button" data-action="attach-answer-file" data-student="${st.id}">📎 Lampirkan File</button>`}
                     </div>
@@ -3386,8 +3387,8 @@
     if(course) syncCourseMeta(course);
   });
 
-  $("scoreTableWrap").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action='attach-answer-file'], button[data-action='open-answer-file'], button[data-action='delete-answer-file']");
+  $("scoreTableWrap").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action='attach-answer-file'], button[data-action='open-answer-file'], button[data-action='delete-answer-file'], button[data-action='regrade-answer-file']");
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "attach-answer-file"){
@@ -3396,7 +3397,34 @@
     }
     if(action === "open-answer-file"){ openAnswerFileInBrowser(btn.dataset.fileid); }
     if(action === "delete-answer-file"){ deleteAnswerFile(btn.dataset.fileid); }
+    if(action === "regrade-answer-file"){
+      btn.disabled = true;
+      btn.textContent = "Membaca…";
+      await regradeAnswerFile(btn.dataset.fileid, btn.dataset.student);
+    }
   });
+
+  async function regradeAnswerFile(fileId, studentId){
+    const f = allAssessmentFiles.find(x => x.id === fileId);
+    const a = allAssessments.find(x => x.id === activeAssessmentId);
+    if(!f || !a) return;
+    try{
+      let blob = f.blob;
+      if(!blob){
+        if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline untuk dibaca ulang"); renderScoreTable(); return; }
+        blob = await downloadBlobFromDrive(f.driveFileId);
+        f.blob = blob;
+        await dbPut(f, ASSESSMENT_FILES_STORE);
+      }
+      const parseNote = await runAutoGrading(a, studentId, blob, f.name);
+      renderScoreTable();
+      renderRekapPenilaian();
+      toast(parseNote || "Selesai membaca ulang file.", 6000);
+    }catch(e){
+      toast("Gagal membaca ulang file: " + e.message, 6000);
+      renderScoreTable();
+    }
+  }
 
   $("answerFileInput").addEventListener("change", async () => {
     const input = $("answerFileInput");
@@ -3407,17 +3435,17 @@
   });
 
   // ---------- Auto-baca file jawaban & pencocokan otomatis ----------
-  async function extractPlainTextFromAnswerFile(file){
-    const ext = file.name.split(".").pop().toLowerCase();
-    if(ext === "pdf"){ return await extractLinesFromPdf(file); }
-    if(ext === "docx"){ return await extractTextFromDocx(file); }
+  async function extractPlainTextFromAnswerFile(blob, filename){
+    const ext = filename.split(".").pop().toLowerCase();
+    if(ext === "pdf"){ return await extractLinesFromPdf(blob); }
+    if(ext === "docx"){ return await extractTextFromDocx(blob); }
     if(ext === "doc"){ throw new Error("Format .doc lama belum didukung, silakan simpan sebagai .docx"); }
-    if(ext === "txt"){ return await file.text(); }
+    if(ext === "txt"){ return await blob.text(); }
     return null; // format lain (misal gambar/foto scan) tidak bisa dibaca otomatis
   }
 
   function splitAnswersByQuestionNumber(text, soalCount){
-    if(!text || soalCount <= 0) return null;
+    if(!text || soalCount <= 0) return { answers: null, foundCount: 0 };
     const lines = text.split(/\r?\n/);
     const pattern = /^\s*(?:jawaban\s*(?:no\.?|nomor)?\s*|soal\s*(?:no\.?|nomor)?\s*)?(\d{1,2})\s*[\.\)\:\-]\s*/i;
     const markers = [];
@@ -3426,21 +3454,18 @@
       if(m){
         const num = parseInt(m[1], 10);
         if(num >= 1 && num <= soalCount){
-          markers.push({ idx, num, matchLen: m[0].length });
+          markers.push({ idx, num });
         }
       }
     });
+    if(markers.length === 0) return { answers: null, foundCount: 0 };
 
     const seen = new Set();
     const orderedMarkers = [];
     for(const m of markers){
       if(!seen.has(m.num)){ seen.add(m.num); orderedMarkers.push(m); }
     }
-    if(orderedMarkers.length !== soalCount) return null;
     orderedMarkers.sort((a,b) => a.idx - b.idx);
-    const numsInDocOrder = orderedMarkers.map(m => m.num);
-    const expected = Array.from({length: soalCount}, (_, i) => i+1);
-    if(JSON.stringify(numsInDocOrder) !== JSON.stringify(expected)) return null;
 
     const answers = new Array(soalCount).fill("");
     for(let i=0;i<orderedMarkers.length;i++){
@@ -3450,7 +3475,39 @@
       segment[0] = segment[0].replace(pattern, "");
       answers[orderedMarkers[i].num - 1] = segment.join(" ").trim();
     }
-    return answers;
+    return { answers, foundCount: orderedMarkers.length };
+  }
+
+  async function runAutoGrading(a, studentId, blob, filename){
+    if(!(a.mode === "otomatis" && a.soal.length > 0)) return null;
+    try{
+      const text = await extractPlainTextFromAnswerFile(blob, filename);
+      if(text === null){
+        return "File ini formatnya tidak bisa dibaca otomatis (misal foto/scan). File tetap tersimpan sebagai lampiran — isi kolom Nilai secara manual di bawah.";
+      }
+      const { answers, foundCount } = splitAnswersByQuestionNumber(text, a.soal.length);
+      if(!answers || foundCount === 0){
+        return "Sistem tidak menemukan pola penomoran soal (misal '1.', '2.', dst) di file ini. File tetap tersimpan — isi kolom Nilai secara manual di bawah.";
+      }
+      if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
+      a.soal.forEach((s, idx) => {
+        const jawabanText = answers[idx];
+        if(!jawabanText || jawabanText.trim() === "") return; // biarkan kosong, dinilai manual
+        const maxNilai = Number(s.maxNilai) || 0;
+        const sim = textSimilarity(jawabanText, s.kunci);
+        let nilai = 0;
+        if(sim >= 0.85) nilai = maxNilai;
+        else if(sim >= 0.5) nilai = Math.round(maxNilai * 0.5);
+        a.jawaban[studentId][s.id] = { jawabanTerbaca: jawabanText, nilai };
+      });
+      await dbPut(a, ASSESSMENTS_STORE);
+      if(foundCount === a.soal.length){
+        return "Semua soal terbaca otomatis dari file dan Nilai sudah terisi berdasarkan kecocokan ke kunci jawaban — silakan cek, koreksi manual kalau ada yang salah baca.";
+      }
+      return `${foundCount} dari ${a.soal.length} soal terbaca otomatis dan sudah dinilai. Sisanya tidak terdeteksi format penomorannya — isi kolom Nilai untuk soal itu secara manual.`;
+    }catch(err){
+      return "Gagal membaca isi file untuk pencocokan otomatis (" + err.message + "). File tetap tersimpan sebagai lampiran, isi kolom Nilai manual di bawah.";
+    }
   }
 
   async function attachAnswerFile(assessmentId, studentId, file){
@@ -3463,37 +3520,7 @@
     await dbPut(record, ASSESSMENT_FILES_STORE);
     allAssessmentFiles.push(record);
 
-    let parseNote = null;
-    if(a.mode === "otomatis" && a.soal.length > 0){
-      try{
-        const text = await extractPlainTextFromAnswerFile(file);
-        if(text === null){
-          parseNote = "File ini formatnya tidak bisa dibaca otomatis (misal foto/scan). File tetap tersimpan sebagai lampiran — isi kolom Nilai secara manual di bawah.";
-        } else {
-          const answers = splitAnswersByQuestionNumber(text, a.soal.length);
-          if(answers){
-            if(!a.jawaban[studentId]) a.jawaban[studentId] = {};
-            a.soal.forEach((s, idx) => {
-              const jawabanText = answers[idx];
-              const maxNilai = Number(s.maxNilai) || 0;
-              let nilai = 0;
-              if(jawabanText && jawabanText.trim() !== ""){
-                const sim = textSimilarity(jawabanText, s.kunci);
-                if(sim >= 0.85) nilai = maxNilai;
-                else if(sim >= 0.5) nilai = Math.round(maxNilai * 0.5);
-              }
-              a.jawaban[studentId][s.id] = { jawabanTerbaca: jawabanText, nilai };
-            });
-            await dbPut(a, ASSESSMENTS_STORE);
-            parseNote = "Jawaban terbaca otomatis dari file, dan Nilai per soal sudah terisi berdasarkan kecocokan ke kunci jawaban — silakan cek, dan koreksi manual kalau ada yang salah baca.";
-          } else {
-            parseNote = "Sistem tidak bisa memisahkan jawaban per soal secara otomatis dari file ini (penomoran soal di file tidak terdeteksi rapi, misal 1., 2., 3., dst berurutan). File tetap tersimpan — isi kolom Nilai secara manual di bawah.";
-          }
-        }
-      }catch(err){
-        parseNote = "Gagal membaca isi file untuk pencocokan otomatis (" + err.message + "). File tetap tersimpan sebagai lampiran, isi kolom Nilai manual di bawah.";
-      }
-    }
+    const parseNote = await runAutoGrading(a, studentId, file, file.name);
 
     renderScoreTable();
     renderRekapPenilaian();

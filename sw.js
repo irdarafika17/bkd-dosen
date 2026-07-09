@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bkd-dosen-shell-v12';
+const CACHE_NAME = 'bkd-dosen-shell-v13';
 const SHELL_FILES = [
   './',
   './index.html',
