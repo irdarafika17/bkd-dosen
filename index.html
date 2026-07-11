@@ -430,6 +430,37 @@
   .score-table td.col-lampiran{left:110px;min-width:150px;max-width:170px;box-shadow:2px 0 4px rgba(0,0,0,0.04);}
   .score-table th.col-lampiran{left:110px;}
 
+  /* ---------- Deadline banner ---------- */
+  .deadline-banner{
+    padding:10px 20px;font-size:13px;font-weight:600;text-align:center;
+    cursor:pointer;color:#3a2c00;
+  }
+  .deadline-banner.hidden{display:none;}
+  .deadline-banner.level-yellow{background:#FEF3C7;color:#92600A;}
+  .deadline-banner.level-orange{background:#FED7AA;color:#9A3412;}
+  .deadline-banner.level-red{background:#FECACA;color:#991B1B;}
+
+  /* ---------- Modul Pekerjaan ---------- */
+  .work-progress-item{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:#fff;
+  }
+  .work-progress-item input[type=checkbox]{width:auto;flex-shrink:0;}
+  .work-progress-item .wp-teks{flex:1;font-size:13px;}
+  .work-progress-item .wp-teks.done{text-decoration:line-through;color:var(--muted);}
+  .work-progress-bar-outer{
+    width:100%;height:8px;border-radius:999px;background:var(--gray-badge);overflow:hidden;margin-top:6px;
+  }
+  .work-progress-bar-inner{height:100%;background:var(--teal);border-radius:999px;}
+  .work-catatan-item{
+    padding:10px 12px;border-left:3px solid var(--teal);border-radius:0 6px 6px 0;
+    background:#FBFAF7;font-size:12.5px;
+  }
+  .work-catatan-item .wc-date{font-weight:700;color:var(--navy);font-size:11.5px;margin-bottom:3px;}
+  .work-deadline-badge.dl-yellow{background:#FEF3C7;color:#92600A;}
+  .work-deadline-badge.dl-orange{background:#FED7AA;color:#9A3412;}
+  .work-deadline-badge.dl-red{background:#FECACA;color:#991B1B;}
+
   .score-cell{display:flex;flex-direction:column;gap:4px;min-width:78px;}
   .soal-item{
     display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
@@ -564,6 +595,8 @@
   </div>
 </header>
 
+<div id="deadlineBanner" class="deadline-banner hidden"></div>
+
 <main>
 
   <!-- Shown before login -->
@@ -589,6 +622,9 @@
         </button>
         <button type="button" class="sidebar-item" data-tab="penilaian">
           <span class="sidebar-dot" style="background:#F472B6;"></span>Penilaian
+        </button>
+        <button type="button" class="sidebar-item" data-tab="pekerjaan">
+          <span class="sidebar-dot" style="background:#38BDF8;"></span>Checklist Pekerjaan
         </button>
       </nav>
 
@@ -971,6 +1007,112 @@
 
     </div>
 
+    <div id="panel-pekerjaan" class="tab-panel hidden">
+
+      <div id="workListView">
+        <section class="card">
+          <h2>Tambah Pekerjaan</h2>
+          <form id="workForm">
+            <div class="form-grid">
+              <div class="full">
+                <label for="workJudul">Judul Pekerjaan</label>
+                <input type="text" id="workJudul" placeholder="misal: Susun Laporan BKD Semester Ganjil" required />
+              </div>
+              <div>
+                <label for="workTanggalMulai">Tanggal Pengerjaan (opsional)</label>
+                <input type="text" id="workTanggalMulai" placeholder="YYYY-MM-DD" />
+              </div>
+              <div>
+                <label for="workDeadline">Tanggal Deadline (opsional)</label>
+                <input type="text" id="workDeadline" placeholder="YYYY-MM-DD" />
+              </div>
+              <div>
+                <label for="workMatkul">Mata Kuliah Terkait (opsional)</label>
+                <select id="workMatkul">
+                  <option value="">Tidak terkait mata kuliah tertentu</option>
+                </select>
+              </div>
+              <div class="full">
+                <label for="workKeterangan">Keterangan (opsional)</label>
+                <textarea id="workKeterangan" placeholder="Keterangan tambahan tentang pekerjaan ini…"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn-primary">+ Tambah Pekerjaan</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Daftar Pekerjaan</h2>
+          <div id="workExportBtns" class="filters" style="margin-bottom:12px;">
+            <button type="button" class="btn-outline" id="exportWorkListExcelBtn">📊 Export Excel</button>
+            <button type="button" class="btn-outline" id="exportWorkListWordBtn">📄 Export Word</button>
+            <button type="button" class="btn-outline" id="exportWorkListPdfBtn">🖨️ Export PDF</button>
+          </div>
+          <div id="workList" class="doc-list"></div>
+          <div id="workEmptyState" class="empty-state hidden">Belum ada pekerjaan. Tambahkan lewat form di atas.</div>
+        </section>
+      </div>
+
+      <div id="workDetailView" class="hidden">
+        <button type="button" id="backToWorkList" class="btn-outline" style="margin-bottom:16px;">← Kembali ke daftar pekerjaan</button>
+
+        <section class="card">
+          <h2 id="workDetailTitle">Pekerjaan</h2>
+          <p id="workDetailSub" style="font-size:12.5px;color:var(--muted);margin-top:-8px;"></p>
+          <div id="workExportDetailBtns" class="filters" style="margin-top:10px;">
+            <button type="button" class="btn-outline" id="exportWorkDetailWordBtn">📄 Export Word</button>
+            <button type="button" class="btn-outline" id="exportWorkDetailPdfBtn">🖨️ Export PDF</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Progres (poin-poin pekerjaan)</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Pecah pekerjaan ini jadi poin-poin kecil, centang kalau sudah selesai. Persen progres dihitung otomatis dari sini.</p>
+          <div id="workProgressList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+          <div class="category-add-row">
+            <input type="text" id="newWorkProgressInput" placeholder="Tambah poin progres baru…" />
+            <button type="button" id="addWorkProgressBtn" class="btn-outline">+ Tambah Poin</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Catatan (log harian)</h2>
+          <form id="workCatatanForm" style="margin-bottom:14px;">
+            <div class="form-grid">
+              <div>
+                <label for="workCatatanTanggal">Tanggal</label>
+                <input type="text" id="workCatatanTanggal" placeholder="YYYY-MM-DD" />
+              </div>
+              <div class="full">
+                <label for="workCatatanTeks">Catatan</label>
+                <textarea id="workCatatanTeks" placeholder="Tulis catatan/update progres hari ini…"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn-primary">+ Tambah Catatan</button>
+            </div>
+          </form>
+          <div id="workCatatanList" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </section>
+
+        <section class="card">
+          <h2>Dokumen &amp; Foto</h2>
+          <div class="file-drop" id="workFileDrop">
+            <div>Klik untuk pilih file, atau seret ke sini</div>
+            <div class="picked" id="workFilePicked"></div>
+          </div>
+          <input type="file" id="workFileInput" class="hidden" />
+          <div class="form-actions">
+            <button type="button" id="workFileUploadBtn" class="btn-primary">Upload File</button>
+          </div>
+          <div id="workFileList" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;"></div>
+        </section>
+      </div>
+
+    </div>
+
       </div>
     </div>
 
@@ -1013,7 +1155,7 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 6;
+  const DB_VERSION = 7;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
@@ -1022,6 +1164,8 @@
   const ATTENDANCE_STORE = "attendance";
   const ASSESSMENTS_STORE = "assessments";
   const ASSESSMENT_FILES_STORE = "assessment_files";
+  const WORK_ITEMS_STORE = "work_items";
+  const WORK_FILES_STORE = "work_files";
   const ATTENDANCE_FILES_STORE = "attendance_files"; // file absensi asli (PDF/Word/Excel) per pertemuan
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
@@ -1062,6 +1206,10 @@
   let allAssessmentFiles = [];
   let allAttendanceFiles = [];
   let answerFileTarget = null; // {assessmentId, studentId} — satu lampiran per mahasiswa per tugas/ujian
+  let allWorkItems = [];
+  let allWorkFiles = [];
+  let activeWorkItemId = null;
+  let selectedWorkFile = null;
   let selectedRpsFile = null;
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
@@ -1119,6 +1267,13 @@
         if(!_db.objectStoreNames.contains(ATTENDANCE_FILES_STORE)){
           const s = _db.createObjectStore(ATTENDANCE_FILES_STORE, { keyPath: "id" });
           s.createIndex("meetingId", "meetingId", { unique:false });
+        }
+        if(!_db.objectStoreNames.contains(WORK_ITEMS_STORE)){
+          _db.createObjectStore(WORK_ITEMS_STORE, { keyPath: "id" });
+        }
+        if(!_db.objectStoreNames.contains(WORK_FILES_STORE)){
+          const s = _db.createObjectStore(WORK_FILES_STORE, { keyPath: "id" });
+          s.createIndex("workItemId", "workItemId", { unique:false });
         }
       };
       req.onsuccess = (e) => resolve(e.target.result);
@@ -1237,7 +1392,7 @@
     const online = navigator.onLine;
     $("netDot").className = "dot " + (online ? "online" : "offline");
     $("netLabel").textContent = online ? "Online" : "Offline";
-    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAttendanceFiles(); syncAllCourseMeta(); pullMataKuliahFromDrive(); }
+    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAttendanceFiles(); syncWorkFiles(); syncAllCourseMeta(); syncAllWorkMeta(); pullMataKuliahFromDrive(); pullWorkItemsFromDrive(); }
   }
   window.addEventListener("online", updateNetStatus);
   window.addEventListener("offline", updateNetStatus);
@@ -1312,12 +1467,15 @@
 
     await pullFromDrive();
     await pullMataKuliahFromDrive();
+    await pullWorkItemsFromDrive();
     await migrateOldDriveStructure();
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
     await syncAttendanceFiles();
+    await syncWorkFiles();
     await syncAllCourseMeta();
+    await syncAllWorkMeta();
     renderList();
   }
 
@@ -1723,6 +1881,7 @@
       renderPenilaianCourseOptions();
       if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
+      renderWorkMatkulOptions();
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("pullMataKuliahFromDrive gagal", e);
@@ -1809,6 +1968,7 @@
     toast(`Mata kuliah "${nama}" ditambahkan`);
     syncCourseMeta(course);
     renderDocMatkulOptions();
+    renderWorkMatkulOptions();
   }
 
   async function deleteCourse(id){
@@ -1852,6 +2012,7 @@
     renderAbsensiCourseOptions();
     renderPenilaianCourseOptions();
     renderDocMatkulOptions();
+    renderWorkMatkulOptions();
     if(activeAbsensiCourseId === id){
       activeAbsensiCourseId = null;
       $("absensiCourseSelect").value = "";
@@ -2454,6 +2615,7 @@
     $("panel-matakuliah").classList.toggle("hidden", tab !== "matakuliah");
     $("panel-absensi").classList.toggle("hidden", tab !== "absensi");
     $("panel-penilaian").classList.toggle("hidden", tab !== "penilaian");
+    $("panel-pekerjaan").classList.toggle("hidden", tab !== "pekerjaan");
   });
 
   // ====================================================================
@@ -3665,6 +3827,535 @@
   }
 
   // ====================================================================
+  // ====== MODUL CHECKLIST PEKERJAAN ======
+  // ====================================================================
+
+  async function loadWorkItemsData(){
+    allWorkItems = await dbGetAll(WORK_ITEMS_STORE);
+    allWorkFiles = await dbGetAll(WORK_FILES_STORE);
+  }
+
+  function computeWorkProgress(item){
+    const points = item.progressPoints || [];
+    const total = points.length;
+    const done = points.filter(p => p.selesai).length;
+    const pct = total > 0 ? Math.round((done/total)*100) : 0;
+    return { done, total, pct };
+  }
+
+  function computeDeadlineStatus(item){
+    if(!item.tanggalDeadline) return null;
+    const { pct } = computeWorkProgress(item);
+    if(pct >= 100) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const deadline = new Date(item.tanggalDeadline);
+    if(isNaN(deadline.getTime())) return null;
+    deadline.setHours(0,0,0,0);
+    const diffDays = Math.round((deadline - today) / (1000*60*60*24));
+    if(diffDays > 7) return null;
+    if(diffDays >= 6) return { level: "yellow", diffDays };
+    if(diffDays >= 4) return { level: "orange", diffDays };
+    return { level: "red", diffDays };
+  }
+
+  function deadlineDayLabel(diffDays){
+    if(diffDays < 0) return `Sudah lewat ${Math.abs(diffDays)} hari`;
+    if(diffDays === 0) return "Deadline hari ini";
+    return `${diffDays} hari lagi`;
+  }
+
+  function updateDeadlineBanner(){
+    const banner = $("deadlineBanner");
+    if(!banner) return;
+    const statuses = allWorkItems
+      .map(item => ({ item, status: computeDeadlineStatus(item) }))
+      .filter(x => x.status);
+    if(statuses.length === 0){
+      banner.className = "deadline-banner hidden";
+      return;
+    }
+    const levelOrder = { red: 3, orange: 2, yellow: 1 };
+    statuses.sort((a,b) => levelOrder[b.status.level] - levelOrder[a.status.level] || a.status.diffDays - b.status.diffDays);
+    const top = statuses[0];
+    banner.className = "deadline-banner level-" + top.status.level;
+    banner.textContent = `⚠️ ${statuses.length} pekerjaan mendekati/lewat deadline — paling mendesak: "${top.item.judul}" (${deadlineDayLabel(top.status.diffDays)}). Klik untuk lihat.`;
+  }
+  $("deadlineBanner").addEventListener("click", () => {
+    const btn = document.querySelector('.sidebar-item[data-tab="pekerjaan"]');
+    if(btn) btn.click();
+  });
+
+  // ---------- Mata Kuliah dropdown untuk form pekerjaan ----------
+  function renderWorkMatkulOptions(){
+    const sel = $("workMatkul");
+    if(!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Tidak terkait mata kuliah tertentu</option>' +
+      allCourses.map(c => `<option value="${c.id}">${escapeHtml(c.nama)} (${escapeHtml(c.semester)} ${escapeHtml(c.tahunAjaran)})</option>`).join("");
+    if(allCourses.some(c => c.id === current)) sel.value = current;
+  }
+
+  // ---------- CRUD Pekerjaan ----------
+  $("workForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const judul = $("workJudul").value.trim();
+    if(!judul){ toast("Judul pekerjaan wajib diisi"); return; }
+    const item = {
+      id: uuid(),
+      judul,
+      tanggalMulai: $("workTanggalMulai").value.trim(),
+      tanggalDeadline: $("workDeadline").value.trim(),
+      matkulId: $("workMatkul").value || null,
+      keterangan: $("workKeterangan").value.trim(),
+      progressPoints: [],
+      catatanLog: [],
+      metaDriveFileId: null
+    };
+    await dbPut(item, WORK_ITEMS_STORE);
+    allWorkItems.push(item);
+    renderWorkList();
+    updateDeadlineBanner();
+    $("workForm").reset();
+    toast(`Pekerjaan "${judul}" ditambahkan`);
+    syncWorkMeta(item);
+  });
+
+  function renderWorkList(){
+    const el = $("workList");
+    if(allWorkItems.length === 0){
+      el.innerHTML = "";
+      $("workEmptyState").classList.remove("hidden");
+      return;
+    }
+    $("workEmptyState").classList.add("hidden");
+    const sorted = allWorkItems.slice().sort((a,b) => (a.tanggalDeadline||"9999").localeCompare(b.tanggalDeadline||"9999"));
+    el.innerHTML = sorted.map(item => {
+      const { done, total, pct } = computeWorkProgress(item);
+      const dl = computeDeadlineStatus(item);
+      const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
+      const dlBadge = dl ? `<span class="badge work-deadline-badge dl-${dl.level}">${deadlineDayLabel(dl.diffDays)}</span>` : "";
+      return `
+        <div class="doc-item" style="--tab-color:#38BDF8;">
+          <div class="doc-main">
+            <div class="doc-name">${escapeHtml(item.judul)}</div>
+            <div class="doc-meta">
+              ${item.tanggalMulai ? `<span>Mulai: ${escapeHtml(item.tanggalMulai)}</span>` : ""}
+              ${item.tanggalDeadline ? `<span>· Deadline: ${escapeHtml(item.tanggalDeadline)}</span>` : ""}
+              ${course ? `<span>· ${escapeHtml(course.nama)}</span>` : ""}
+            </div>
+            ${item.keterangan ? `<div class="doc-note">${escapeHtml(item.keterangan)}</div>` : ""}
+            <div class="doc-badges">
+              <span class="badge type">${done}/${total} poin (${pct}%)</span>
+              ${dlBadge}
+            </div>
+          </div>
+          <div class="doc-actions">
+            <button class="icon-btn" data-action="open-work" data-id="${item.id}">Kelola</button>
+            <button class="icon-btn" data-action="delete-work" data-id="${item.id}" style="color:var(--danger)">Hapus</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  $("workList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    if(btn.dataset.action === "open-work"){ openWorkDetail(btn.dataset.id); }
+    if(btn.dataset.action === "delete-work"){ deleteWorkItem(btn.dataset.id); }
+  });
+
+  async function deleteWorkItem(id){
+    const item = allWorkItems.find(x => x.id === id);
+    if(!item) return;
+    if(!confirm(`Hapus pekerjaan "${item.judul}"? Semua progres, catatan, dan file di dalamnya juga akan terhapus.`)) return;
+    const relatedFiles = allWorkFiles.filter(f => f.workItemId === id);
+    for(const f of relatedFiles){
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, WORK_FILES_STORE);
+    }
+    allWorkFiles = allWorkFiles.filter(f => f.workItemId !== id);
+    try{ if(item.metaDriveFileId && navigator.onLine){ await trashFileInDrive(item.metaDriveFileId); } }catch(e){}
+    await dbDelete(id, WORK_ITEMS_STORE);
+    allWorkItems = allWorkItems.filter(x => x.id !== id);
+    if(activeWorkItemId === id){
+      activeWorkItemId = null;
+      $("workDetailView").classList.add("hidden");
+      $("workListView").classList.remove("hidden");
+    }
+    renderWorkList();
+    updateDeadlineBanner();
+    toast("Pekerjaan dihapus");
+  }
+
+  function openWorkDetail(id){
+    activeWorkItemId = id;
+    const item = allWorkItems.find(x => x.id === id);
+    if(!item) return;
+    $("workListView").classList.add("hidden");
+    $("workDetailView").classList.remove("hidden");
+    $("workDetailTitle").textContent = item.judul;
+    const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
+    const subParts = [];
+    if(item.tanggalMulai) subParts.push(`Mulai: ${item.tanggalMulai}`);
+    if(item.tanggalDeadline) subParts.push(`Deadline: ${item.tanggalDeadline}`);
+    if(course) subParts.push(course.nama);
+    $("workDetailSub").textContent = subParts.join(" · ");
+    renderWorkProgressPoints();
+    renderWorkCatatanLog();
+    renderWorkFiles();
+  }
+  $("backToWorkList").addEventListener("click", () => {
+    activeWorkItemId = null;
+    $("workDetailView").classList.add("hidden");
+    $("workListView").classList.remove("hidden");
+    renderWorkList();
+    updateDeadlineBanner();
+  });
+
+  // ---------- Progres poin ----------
+  function renderWorkProgressPoints(){
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const { pct } = computeWorkProgress(item);
+    const points = item.progressPoints || [];
+    const listHtml = points.length === 0
+      ? '<div class="empty-state" style="padding:10px 0;">Belum ada poin progres.</div>'
+      : points.map(p => `
+          <div class="work-progress-item" data-pointid="${p.id}">
+            <input type="checkbox" data-pointid="${p.id}" ${p.selesai ? "checked" : ""} />
+            <span class="wp-teks ${p.selesai ? "done" : ""}">${escapeHtml(p.teks)}</span>
+            <button class="icon-btn" data-action="delete-point" data-pointid="${p.id}" style="color:var(--danger)">Hapus</button>
+          </div>
+        `).join("");
+    $("workProgressList").innerHTML = `
+      <div class="work-progress-bar-outer"><div class="work-progress-bar-inner" style="width:${pct}%;"></div></div>
+      <div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px;">${pct}% selesai</div>
+      ${listHtml}
+    `;
+  }
+  $("addWorkProgressBtn").addEventListener("click", async () => {
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const teks = $("newWorkProgressInput").value.trim();
+    if(!teks){ toast("Isi teks poin dulu"); return; }
+    if(!item.progressPoints) item.progressPoints = [];
+    item.progressPoints.push({ id: uuid(), teks, selesai: false });
+    await dbPut(item, WORK_ITEMS_STORE);
+    renderWorkProgressPoints();
+    renderWorkList();
+    updateDeadlineBanner();
+    $("newWorkProgressInput").value = "";
+    syncWorkMeta(item);
+  });
+  $("workProgressList").addEventListener("change", async (e) => {
+    const cb = e.target.closest("input[type=checkbox][data-pointid]");
+    if(!cb) return;
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const point = (item.progressPoints||[]).find(p => p.id === cb.dataset.pointid);
+    if(point){ point.selesai = cb.checked; await dbPut(item, WORK_ITEMS_STORE); }
+    renderWorkProgressPoints();
+    updateDeadlineBanner();
+    syncWorkMeta(item);
+  });
+  $("workProgressList").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action='delete-point']");
+    if(!btn) return;
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    item.progressPoints = (item.progressPoints||[]).filter(p => p.id !== btn.dataset.pointid);
+    await dbPut(item, WORK_ITEMS_STORE);
+    renderWorkProgressPoints();
+    renderWorkList();
+    updateDeadlineBanner();
+    syncWorkMeta(item);
+  });
+
+  // ---------- Catatan log harian ----------
+  function renderWorkCatatanLog(){
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const log = (item.catatanLog || []).slice().sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
+    $("workCatatanList").innerHTML = log.length === 0
+      ? '<div class="empty-state" style="padding:10px 0;">Belum ada catatan.</div>'
+      : log.map(c => `
+          <div class="work-catatan-item" data-catatanid="${c.id}">
+            <div class="wc-date">${escapeHtml(c.tanggal || "")}
+              <button class="icon-btn" data-action="delete-catatan" data-catatanid="${c.id}" style="color:var(--danger);float:right;padding:2px 8px;">Hapus</button>
+            </div>
+            <div>${escapeHtml(c.teks)}</div>
+          </div>
+        `).join("");
+    $("workCatatanTanggal").value = new Date().toISOString().slice(0,10);
+  }
+  $("workCatatanForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const tanggal = $("workCatatanTanggal").value.trim() || new Date().toISOString().slice(0,10);
+    const teks = $("workCatatanTeks").value.trim();
+    if(!teks){ toast("Isi catatan dulu"); return; }
+    if(!item.catatanLog) item.catatanLog = [];
+    item.catatanLog.push({ id: uuid(), tanggal, teks });
+    await dbPut(item, WORK_ITEMS_STORE);
+    renderWorkCatatanLog();
+    $("workCatatanForm").reset();
+    $("workCatatanTanggal").value = new Date().toISOString().slice(0,10);
+    toast("Catatan ditambahkan");
+    syncWorkMeta(item);
+  });
+  $("workCatatanList").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action='delete-catatan']");
+    if(!btn) return;
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    if(!confirm("Hapus catatan ini?")) return;
+    item.catatanLog = (item.catatanLog||[]).filter(c => c.id !== btn.dataset.catatanid);
+    await dbPut(item, WORK_ITEMS_STORE);
+    renderWorkCatatanLog();
+    syncWorkMeta(item);
+  });
+
+  // ---------- Dokumen & Foto pekerjaan ----------
+  const workFileDrop = $("workFileDrop"), workFileInput = $("workFileInput");
+  workFileDrop.addEventListener("click", () => workFileInput.click());
+  workFileDrop.addEventListener("dragover", (e) => { e.preventDefault(); workFileDrop.classList.add("drag"); });
+  workFileDrop.addEventListener("dragleave", () => workFileDrop.classList.remove("drag"));
+  workFileDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); workFileDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){ selectedWorkFile = e.dataTransfer.files[0]; $("workFilePicked").textContent = selectedWorkFile.name; }
+  });
+  workFileInput.addEventListener("change", () => {
+    if(workFileInput.files[0]){ selectedWorkFile = workFileInput.files[0]; $("workFilePicked").textContent = selectedWorkFile.name; }
+  });
+  $("workFileUploadBtn").addEventListener("click", async () => {
+    if(!selectedWorkFile){ toast("Pilih file dulu"); return; }
+    if(!activeWorkItemId){ toast("Tidak ada pekerjaan aktif"); return; }
+    const record = {
+      id: uuid(), workItemId: activeWorkItemId, name: selectedWorkFile.name,
+      driveFileId: null, syncStatus: "local", blob: selectedWorkFile
+    };
+    await dbPut(record, WORK_FILES_STORE);
+    allWorkFiles.push(record);
+    renderWorkFiles();
+    selectedWorkFile = null;
+    $("workFilePicked").textContent = "";
+    workFileInput.value = "";
+    toast(navigator.onLine ? "File disimpan, menyinkronkan…" : "File disimpan lokal (offline)");
+    if(navigator.onLine && accessToken){ syncWorkFiles(); }
+  });
+
+  function renderWorkFiles(){
+    const files = allWorkFiles.filter(f => f.workItemId === activeWorkItemId);
+    $("workFileList").innerHTML = files.length === 0
+      ? '<div class="empty-state" style="padding:10px 0;">Belum ada file.</div>'
+      : files.map(fileRowHtmlGeneric).join("");
+  }
+  function fileRowHtmlGeneric(f){
+    const badge = f.syncStatus === "synced"
+      ? '<span class="badge synced">Tersinkron</span>'
+      : '<span class="badge pending">Menunggu sync</span>';
+    return `
+      <div class="meeting-file-row" data-id="${f.id}">
+        <span class="mf-name">${escapeHtml(f.name)}</span>
+        ${badge}
+        <span class="mf-actions">
+          <button class="icon-btn" data-action="wf-open" data-id="${f.id}">Buka</button>
+          <button class="icon-btn" data-action="wf-download" data-id="${f.id}">Unduh</button>
+          <button class="icon-btn" data-action="wf-delete" data-id="${f.id}" style="color:var(--danger)">Hapus</button>
+        </span>
+      </div>
+    `;
+  }
+  $("workFileList").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    const f = allWorkFiles.find(x => x.id === btn.dataset.id);
+    if(!f) return;
+    if(btn.dataset.action === "wf-open" || btn.dataset.action === "wf-download"){
+      try{
+        let blob = f.blob;
+        if(!blob){
+          if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline"); return; }
+          blob = await downloadBlobFromDrive(f.driveFileId);
+          f.blob = blob;
+          await dbPut(f, WORK_FILES_STORE);
+        }
+        const url = URL.createObjectURL(blob);
+        if(btn.dataset.action === "wf-open"){
+          window.open(url, "_blank");
+        } else {
+          const a = document.createElement("a");
+          a.href = url; a.download = f.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }
+      }catch(err){ toast("Gagal membuka/mengunduh file"); }
+    }
+    if(btn.dataset.action === "wf-delete"){
+      if(!confirm(`Hapus file "${f.name}"?`)) return;
+      try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      await dbDelete(f.id, WORK_FILES_STORE);
+      allWorkFiles = allWorkFiles.filter(x => x.id !== f.id);
+      renderWorkFiles();
+      toast("File dihapus");
+    }
+  });
+
+  // ---------- Sinkronisasi Drive untuk Pekerjaan ----------
+  async function ensureWorkItemFolder(item){
+    return ensureFolderPath(["Pekerjaan", item.judul], rootFolderId);
+  }
+  async function syncWorkMeta(item){
+    if(!accessToken || !navigator.onLine) return;
+    try{
+      const folderId = await ensureWorkItemFolder(item);
+      const payload = {
+        id: item.id, judul: item.judul, tanggalMulai: item.tanggalMulai, tanggalDeadline: item.tanggalDeadline,
+        matkulId: item.matkulId, keterangan: item.keterangan,
+        progressPoints: item.progressPoints || [], catatanLog: item.catatanLog || []
+      };
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      if(item.metaDriveFileId){
+        await updateFileContentInDrive(item.metaDriveFileId, blob);
+      } else {
+        const fileId = await uploadBlobToDrive(blob, `__meta__${item.id}.json`, folderId, {
+          recordType: "work_meta", workItemId: item.id
+        });
+        item.metaDriveFileId = fileId;
+        await dbPut(item, WORK_ITEMS_STORE);
+      }
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
+      console.warn("Gagal sync metadata pekerjaan", item.judul, e);
+      toast(`Gagal sinkron pekerjaan "${item.judul}": ${e.message}`, 6000);
+    }
+  }
+  async function syncAllWorkMeta(){
+    for(const item of allWorkItems){ await syncWorkMeta(item); }
+  }
+  async function syncWorkFiles(){
+    if(!accessToken || !navigator.onLine) return;
+    const pending = allWorkFiles.filter(f => f.syncStatus === "local");
+    if(pending.length === 0) return;
+    const errors = [];
+    for(const f of pending){
+      try{
+        const item = allWorkItems.find(x => x.id === f.workItemId);
+        const folderId = item ? await ensureWorkItemFolder(item) : await ensureMatkulFolder();
+        const fileId = await uploadBlobToDrive(f.blob, f.name, folderId, {
+          recordType: "work_file", workItemId: f.workItemId
+        });
+        f.driveFileId = fileId;
+        f.syncStatus = "synced";
+        await dbPut(f, WORK_FILES_STORE);
+      }catch(e){
+        if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); break; }
+        console.warn("Gagal sync file pekerjaan", f.name, e);
+        errors.push(`${f.name}: ${e.message}`);
+      }
+    }
+    renderWorkFiles();
+    if(errors.length > 0){ toast(`Gagal sync ${errors.length} file pekerjaan — ${errors[0]}`, 6000); }
+  }
+  async function pullWorkItemsFromDrive(){
+    if(!accessToken || !navigator.onLine) return;
+    try{
+      const allFiles = await listAllAppFiles();
+      const metaFiles = allFiles.filter(f => (f.properties||{}).recordType === "work_meta");
+      for(const mf of metaFiles){
+        let payload;
+        try{
+          const blob = await downloadBlobFromDrive(mf.id);
+          payload = JSON.parse(await blob.text());
+        }catch(e){ continue; }
+        let item = allWorkItems.find(x => x.id === payload.id);
+        if(!item){
+          item = { ...payload, metaDriveFileId: mf.id };
+          await dbPut(item, WORK_ITEMS_STORE);
+          allWorkItems.push(item);
+        } else if(!item.metaDriveFileId){
+          item.metaDriveFileId = mf.id;
+          await dbPut(item, WORK_ITEMS_STORE);
+        }
+      }
+      const workFileEntries = allFiles.filter(f => (f.properties||{}).recordType === "work_file");
+      const existingDriveIds = new Set(allWorkFiles.map(f => f.driveFileId).filter(Boolean));
+      for(const f of workFileEntries){
+        if(existingDriveIds.has(f.id)) continue;
+        const props = f.properties || {};
+        const record = {
+          id: uuid(), workItemId: props.workItemId || null, name: f.name,
+          driveFileId: f.id, syncStatus: "synced", blob: null
+        };
+        await dbPut(record, WORK_FILES_STORE);
+        allWorkFiles.push(record);
+      }
+      renderWorkList();
+      updateDeadlineBanner();
+      if(activeWorkItemId){ renderWorkProgressPoints(); renderWorkCatatanLog(); renderWorkFiles(); }
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
+      console.warn("pullWorkItemsFromDrive gagal", e);
+      toast(`Gagal menarik data pekerjaan dari Drive: ${e.message}`, 6000);
+    }
+  }
+
+  // ---------- Export Pekerjaan ----------
+  function buildWorkListExportData(){
+    const headers = ["Judul", "Mulai", "Deadline", "Progres", "Mata Kuliah", "Keterangan"];
+    const rows = allWorkItems.map(item => {
+      const { done, total, pct } = computeWorkProgress(item);
+      const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
+      return [item.judul, item.tanggalMulai||"-", item.tanggalDeadline||"-", `${done}/${total} (${pct}%)`, course?.nama||"-", item.keterangan||"-"];
+    });
+    return { headers, rows, hasData: allWorkItems.length > 0 };
+  }
+  $("exportWorkListExcelBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildWorkListExportData();
+    if(!hasData){ toast("Belum ada pekerjaan untuk diexport"); return; }
+    exportToExcel("Daftar_Pekerjaan.xlsx", "Daftar Pekerjaan", headers, rows);
+  });
+  $("exportWorkListWordBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildWorkListExportData();
+    if(!hasData){ toast("Belum ada pekerjaan untuk diexport"); return; }
+    exportToWord("Daftar_Pekerjaan.doc", "Daftar Pekerjaan", headers, rows);
+  });
+  $("exportWorkListPdfBtn").addEventListener("click", () => {
+    const { headers, rows, hasData } = buildWorkListExportData();
+    if(!hasData){ toast("Belum ada pekerjaan untuk diexport"); return; }
+    exportToPDF("Daftar_Pekerjaan.pdf", "Daftar Pekerjaan", headers, rows);
+  });
+
+  function buildWorkDetailExportData(item){
+    const { done, total, pct } = computeWorkProgress(item);
+    const headers = ["Bagian", "Isi"];
+    const rows = [
+      ["Judul", item.judul],
+      ["Tanggal Mulai", item.tanggalMulai || "-"],
+      ["Tanggal Deadline", item.tanggalDeadline || "-"],
+      ["Keterangan", item.keterangan || "-"],
+      ["Progres", `${done}/${total} poin selesai (${pct}%)`],
+      ...(item.progressPoints||[]).map(p => [`  Poin: ${p.teks}`, p.selesai ? "Selesai" : "Belum"]),
+      ...(item.catatanLog||[]).slice().sort((a,b)=>(a.tanggal||"").localeCompare(b.tanggal||"")).map(c => [`Catatan (${c.tanggal})`, c.teks])
+    ];
+    return { headers, rows };
+  }
+  $("exportWorkDetailWordBtn").addEventListener("click", () => {
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const { headers, rows } = buildWorkDetailExportData(item);
+    exportToWord(`Pekerjaan_${item.judul.replace(/\s+/g,"_")}.doc`, `Laporan Pekerjaan — ${item.judul}`, headers, rows);
+  });
+  $("exportWorkDetailPdfBtn").addEventListener("click", () => {
+    const item = allWorkItems.find(x => x.id === activeWorkItemId);
+    if(!item) return;
+    const { headers, rows } = buildWorkDetailExportData(item);
+    exportToPDF(`Pekerjaan_${item.judul.replace(/\s+/g,"_")}.pdf`, `Laporan Pekerjaan — ${item.judul}`, headers, rows);
+  });
+
+  // ====================================================================
   // ====== MODUL EXPORT (PDF / Word / Excel) ======
   // ====================================================================
 
@@ -4152,12 +4843,15 @@
     toast("Menyinkronkan…");
     await pullFromDrive();
     await pullMataKuliahFromDrive();
+    await pullWorkItemsFromDrive();
     await migrateOldDriveStructure();
     await attemptAutoSync();
     await syncCourseFiles();
     await syncAssessmentFiles();
     await syncAttendanceFiles();
+    await syncWorkFiles();
     await syncAllCourseMeta();
+    await syncAllWorkMeta();
     renderList();
     toast("Sinkronisasi selesai");
   });
@@ -4191,6 +4885,11 @@
     $("penilaianEmptyCourse").classList.remove("hidden");
 
     renderDocMatkulOptions();
+
+    await loadWorkItemsData();
+    renderWorkList();
+    renderWorkMatkulOptions();
+    updateDeadlineBanner();
 
     if(localStorage.getItem("bkd_has_logged_in") === "1"){
       $("loginCard").classList.add("hidden");
