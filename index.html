@@ -1482,6 +1482,17 @@
     if(res.status === 401){
       throw new Error("AUTH_EXPIRED");
     }
+    if(res.status === 403){
+      try{
+        const bodyText = await res.clone().text();
+        if(/insufficient/i.test(bodyText)){
+          throw new Error("AUTH_EXPIRED");
+        }
+      }catch(e){
+        if(e.message === "AUTH_EXPIRED") throw e;
+        // gagal baca body, biarkan lanjut sebagai error biasa
+      }
+    }
     return res;
   }
 
