@@ -1026,12 +1026,6 @@
                 <label for="workDeadline">Tanggal Deadline (opsional)</label>
                 <input type="text" id="workDeadline" placeholder="YYYY-MM-DD" />
               </div>
-              <div>
-                <label for="workMatkul">Mata Kuliah Terkait (opsional)</label>
-                <select id="workMatkul">
-                  <option value="">Tidak terkait mata kuliah tertentu</option>
-                </select>
-              </div>
               <div class="full">
                 <label for="workKeterangan">Keterangan (opsional)</label>
                 <textarea id="workKeterangan" placeholder="Keterangan tambahan tentang pekerjaan ini…"></textarea>
@@ -1881,7 +1875,6 @@
       renderPenilaianCourseOptions();
       if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
-      renderWorkMatkulOptions();
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
       console.warn("pullMataKuliahFromDrive gagal", e);
@@ -1968,7 +1961,6 @@
     toast(`Mata kuliah "${nama}" ditambahkan`);
     syncCourseMeta(course);
     renderDocMatkulOptions();
-    renderWorkMatkulOptions();
   }
 
   async function deleteCourse(id){
@@ -2012,7 +2004,6 @@
     renderAbsensiCourseOptions();
     renderPenilaianCourseOptions();
     renderDocMatkulOptions();
-    renderWorkMatkulOptions();
     if(activeAbsensiCourseId === id){
       activeAbsensiCourseId = null;
       $("absensiCourseSelect").value = "";
@@ -3440,13 +3431,49 @@
     }
     return dp[m][n];
   }
+
+  function normalizeWords(str){
+    return String(str||"")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter(w => w.length > 0);
+  }
+
+  // Bandingkan kesamaan kata-kata yang dipakai (bukan urutan hurufnya) —
+  // cocok untuk jawaban panjang/esai yang ditulis dengan susunan kalimat berbeda
+  // tapi maksudnya sama (mengatasi kasus "mendekati benar" yang tadinya tidak terbaca).
+  function wordOverlapSimilarity(a, b){
+    const wordsA = normalizeWords(a);
+    const wordsB = normalizeWords(b);
+    if(wordsA.length === 0 || wordsB.length === 0) return 0;
+    const setA = new Set(wordsA);
+    const setB = new Set(wordsB);
+    let common = 0;
+    setA.forEach(w => { if(setB.has(w)) common++; });
+    const union = new Set([...setA, ...setB]).size;
+    return union > 0 ? common / union : 0;
+  }
+
   function textSimilarity(a, b){
     const na = String(a||"").trim().toLowerCase();
     const nb = String(b||"").trim().toLowerCase();
     if(!na || !nb) return 0;
     if(na === nb) return 1;
-    const dist = levenshtein(na, nb);
-    return 1 - dist / Math.max(na.length, nb.length);
+
+    const wordCountA = normalizeWords(na).length;
+    const wordCountB = normalizeWords(nb).length;
+
+    // Jawaban pendek (isian singkat/pilihan ganda, ≤4 kata) → bandingkan huruf demi huruf,
+    // supaya tetap peka terhadap typo/ejaan yang penting untuk jawaban singkat.
+    if(wordCountA <= 4 && wordCountB <= 4){
+      const dist = levenshtein(na, nb);
+      return 1 - dist / Math.max(na.length, nb.length);
+    }
+
+    // Jawaban panjang (uraian/esai) → bandingkan kata-kata yang dipakai,
+    // toleran terhadap susunan kalimat yang beda tapi maksudnya sama.
+    return wordOverlapSimilarity(na, nb);
   }
 
   function computeStudentTotal(activity, studentId){
@@ -3885,16 +3912,6 @@
     if(btn) btn.click();
   });
 
-  // ---------- Mata Kuliah dropdown untuk form pekerjaan ----------
-  function renderWorkMatkulOptions(){
-    const sel = $("workMatkul");
-    if(!sel) return;
-    const current = sel.value;
-    sel.innerHTML = '<option value="">Tidak terkait mata kuliah tertentu</option>' +
-      allCourses.map(c => `<option value="${c.id}">${escapeHtml(c.nama)} (${escapeHtml(c.semester)} ${escapeHtml(c.tahunAjaran)})</option>`).join("");
-    if(allCourses.some(c => c.id === current)) sel.value = current;
-  }
-
   // ---------- CRUD Pekerjaan ----------
   $("workForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -3905,7 +3922,6 @@
       judul,
       tanggalMulai: $("workTanggalMulai").value.trim(),
       tanggalDeadline: $("workDeadline").value.trim(),
-      matkulId: $("workMatkul").value || null,
       keterangan: $("workKeterangan").value.trim(),
       progressPoints: [],
       catatanLog: [],
@@ -3932,7 +3948,6 @@
     el.innerHTML = sorted.map(item => {
       const { done, total, pct } = computeWorkProgress(item);
       const dl = computeDeadlineStatus(item);
-      const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
       const dlBadge = dl ? `<span class="badge work-deadline-badge dl-${dl.level}">${deadlineDayLabel(dl.diffDays)}</span>` : "";
       return `
         <div class="doc-item" style="--tab-color:#38BDF8;">
@@ -3941,7 +3956,6 @@
             <div class="doc-meta">
               ${item.tanggalMulai ? `<span>Mulai: ${escapeHtml(item.tanggalMulai)}</span>` : ""}
               ${item.tanggalDeadline ? `<span>· Deadline: ${escapeHtml(item.tanggalDeadline)}</span>` : ""}
-              ${course ? `<span>· ${escapeHtml(course.nama)}</span>` : ""}
             </div>
             ${item.keterangan ? `<div class="doc-note">${escapeHtml(item.keterangan)}</div>` : ""}
             <div class="doc-badges">
@@ -3995,11 +4009,9 @@
     $("workListView").classList.add("hidden");
     $("workDetailView").classList.remove("hidden");
     $("workDetailTitle").textContent = item.judul;
-    const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
     const subParts = [];
     if(item.tanggalMulai) subParts.push(`Mulai: ${item.tanggalMulai}`);
     if(item.tanggalDeadline) subParts.push(`Deadline: ${item.tanggalDeadline}`);
-    if(course) subParts.push(course.nama);
     $("workDetailSub").textContent = subParts.join(" · ");
     renderWorkProgressPoints();
     renderWorkCatatanLog();
@@ -4213,7 +4225,7 @@
       const folderId = await ensureWorkItemFolder(item);
       const payload = {
         id: item.id, judul: item.judul, tanggalMulai: item.tanggalMulai, tanggalDeadline: item.tanggalDeadline,
-        matkulId: item.matkulId, keterangan: item.keterangan,
+        keterangan: item.keterangan,
         progressPoints: item.progressPoints || [], catatanLog: item.catatanLog || []
       };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
@@ -4304,11 +4316,10 @@
 
   // ---------- Export Pekerjaan ----------
   function buildWorkListExportData(){
-    const headers = ["Judul", "Mulai", "Deadline", "Progres", "Mata Kuliah", "Keterangan"];
+    const headers = ["Judul", "Mulai", "Deadline", "Progres", "Keterangan"];
     const rows = allWorkItems.map(item => {
       const { done, total, pct } = computeWorkProgress(item);
-      const course = item.matkulId ? allCourses.find(c => c.id === item.matkulId) : null;
-      return [item.judul, item.tanggalMulai||"-", item.tanggalDeadline||"-", `${done}/${total} (${pct}%)`, course?.nama||"-", item.keterangan||"-"];
+      return [item.judul, item.tanggalMulai||"-", item.tanggalDeadline||"-", `${done}/${total} (${pct}%)`, item.keterangan||"-"];
     });
     return { headers, rows, hasData: allWorkItems.length > 0 };
   }
@@ -4888,7 +4899,6 @@
 
     await loadWorkItemsData();
     renderWorkList();
-    renderWorkMatkulOptions();
     updateDeadlineBanner();
 
     if(localStorage.getItem("bkd_has_logged_in") === "1"){
