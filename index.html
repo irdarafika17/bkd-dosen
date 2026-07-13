@@ -1401,6 +1401,13 @@
           toast("Login gagal: " + resp.error);
           return;
         }
+        if(resp.scope && !resp.scope.includes("drive.file")){
+          // Token yang didapat (biasanya dari login diam-diam) tidak mencakup izin Drive
+          // yang dibutuhkan — minta izin penuh ulang supaya tidak gagal sync nanti.
+          console.warn("Token belum mencakup izin Drive, minta izin ulang. Scope diterima:", resp.scope);
+          tokenClient.requestAccessToken({ prompt: "consent" });
+          return;
+        }
         accessToken = resp.access_token;
         localStorage.setItem("bkd_has_logged_in", "1");
         await onLoggedIn();
@@ -4644,11 +4651,16 @@
     }
   }
 
+  let authExpiredNoticeShown = false;
   function handleAuthExpired(){
-    toast("Sesi berakhir, silakan masuk kembali");
     accessToken = null;
     $("loginBtn").classList.remove("hidden");
     $("logoutBtn").classList.add("hidden");
+    if(!authExpiredNoticeShown){
+      authExpiredNoticeShown = true;
+      toast("Sesi Google kamu perlu di-refresh (izin akses belum lengkap/kedaluwarsa). Klik 'Masuk dengan Google' di kanan atas untuk sinkron ulang.", 9000);
+      setTimeout(() => { authExpiredNoticeShown = false; }, 20000);
+    }
   }
 
   // ====== Upload form ======
