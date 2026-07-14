@@ -2848,10 +2848,15 @@
       for(const item of content.items){
         const y = Math.round(item.transform[5]);
         if(!byY.has(y)) byY.set(y, []);
-        byY.get(y).push(item.str);
+        // Simpan posisi X juga, supaya kata-kata di baris yang sama bisa diurutkan
+        // dari kiri ke kanan sesuai urutan baca yang benar (bukan urutan acak dari PDF).
+        byY.get(y).push({ x: item.transform[4], str: item.str });
       }
       const sortedY = [...byY.keys()].sort((a,b) => b - a);
-      for(const y of sortedY){ lines.push(byY.get(y).join(" ")); }
+      for(const y of sortedY){
+        const wordsInLine = byY.get(y).sort((a,b) => a.x - b.x).map(w => w.str);
+        lines.push(wordsInLine.join(" "));
+      }
     }
     return lines.join("\n");
   }
