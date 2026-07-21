@@ -766,6 +766,34 @@
         </section>
 
         <section class="card">
+          <h2>Kontrak Kuliah</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload dokumen Kontrak Kuliah (PDF) untuk mata kuliah ini.</p>
+          <div class="file-drop" id="kontrakDrop">
+            <div>Klik untuk pilih file Kontrak Kuliah (PDF), atau seret ke sini</div>
+            <div class="picked" id="kontrakPicked"></div>
+          </div>
+          <input type="file" id="kontrakInput" class="hidden" accept=".pdf" />
+          <div class="form-actions">
+            <button type="button" id="kontrakUploadBtn" class="btn-primary">Simpan Kontrak Kuliah</button>
+          </div>
+          <div id="kontrakList" class="doc-list" style="margin-top:14px;"></div>
+        </section>
+
+        <section class="card">
+          <h2>Dokumen Pendukung (PDF)</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload dokumen pendukung lain dalam format PDF untuk mata kuliah ini (misal: SK mengajar, jadwal, surat tugas, dll).</p>
+          <div class="file-drop" id="dokPdfDrop">
+            <div>Klik untuk pilih file PDF, atau seret ke sini</div>
+            <div class="picked" id="dokPdfPicked"></div>
+          </div>
+          <input type="file" id="dokPdfInput" class="hidden" accept=".pdf" />
+          <div class="form-actions">
+            <button type="button" id="dokPdfUploadBtn" class="btn-primary">Simpan Dokumen</button>
+          </div>
+          <div id="dokPdfList" class="doc-list" style="margin-top:14px;"></div>
+        </section>
+
+        <section class="card">
           <h2>Tambah Pertemuan</h2>
           <form id="meetingForm">
             <div class="form-grid">
@@ -825,6 +853,20 @@
               <div class="student-table-scroll" id="studentTableScroll"></div>
             </details>
           </div>
+        </section>
+
+        <section class="card">
+          <h2>Dokumen Absensi (PDF)</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Upload dokumen absensi umum (PDF) untuk mata kuliah ini, misalnya rekap tanda tangan absensi manual satu semester. Dokumen ini terpisah dari lampiran absensi per pertemuan di bawah.</p>
+          <div class="file-drop" id="absensiDokDrop">
+            <div>Klik untuk pilih file PDF absensi, atau seret ke sini</div>
+            <div class="picked" id="absensiDokPicked"></div>
+          </div>
+          <input type="file" id="absensiDokInput" class="hidden" accept=".pdf" />
+          <div class="form-actions">
+            <button type="button" id="absensiDokUploadBtn" class="btn-primary">Simpan Dokumen Absensi</button>
+          </div>
+          <div id="absensiDokList" class="doc-list" style="margin-top:14px;"></div>
         </section>
 
         <div id="absensiListView">
@@ -1138,6 +1180,48 @@
   </div>
 </div>
 
+<div id="fileEditModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3 style="margin-top:0;">Edit Dokumen</h3>
+    <div>
+      <label for="fileEditName">Nama File</label>
+      <input type="text" id="fileEditName" />
+    </div>
+    <div id="fileEditExtraFields" class="hidden" style="margin-top:12px;">
+      <div class="form-grid">
+        <div>
+          <label for="fileEditJenis">Jenis Dokumen</label>
+          <select id="fileEditJenis"></select>
+        </div>
+        <div>
+          <label for="fileEditMatkul">Mata Kuliah (opsional)</label>
+          <select id="fileEditMatkul"></select>
+        </div>
+        <div>
+          <label for="fileEditSemester">Semester</label>
+          <input type="text" id="fileEditSemester" placeholder="misal: Ganjil 2026/2027" />
+        </div>
+        <div class="full">
+          <label for="fileEditCatatan">Catatan</label>
+          <textarea id="fileEditCatatan"></textarea>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:14px;">
+      <label>Ganti File (opsional)</label>
+      <div class="file-drop" id="fileEditDrop">
+        <div>Klik untuk pilih file pengganti, atau seret ke sini — kosongkan jika hanya ingin ubah nama/data</div>
+        <div class="picked" id="fileEditPicked"></div>
+      </div>
+      <input type="file" id="fileEditInput" class="hidden" />
+    </div>
+    <div class="form-actions" style="gap:8px;">
+      <button type="button" id="fileEditCancelBtn" class="btn-outline">Batal</button>
+      <button type="button" id="fileEditSaveBtn" class="btn-primary">Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script>
@@ -1208,6 +1292,11 @@
   let selectedStudentFile = null;
   let selectedMaterialFile = null;
   let materialTargetMeetingId = null;
+  let selectedKontrakFile = null;
+  let selectedDokPdfFile = null;
+  let selectedAbsensiDokFile = null;
+  let fileEditContext = null; // { source: 'course_files' | 'attendance_files' | 'documents', id }
+  let selectedFileEditReplacement = null;
 
   // ====== DOM helpers ======
   const $ = (id) => document.getElementById(id);
@@ -1887,9 +1976,9 @@
       }
 
       renderCourseList();
-      if(activeCourseId){ renderRpsList(); renderMeetingList(); }
+      if(activeCourseId){ renderRpsList(); renderKontrakList(); renderDokPdfList(); renderMeetingList(); }
       renderAbsensiCourseOptions();
-      if(activeAbsensiCourseId){ updateAbsensiCourseBadge(); renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); renderAttendanceFileCurrent(); }
+      if(activeAbsensiCourseId){ updateAbsensiCourseBadge(); renderAbsensiMeetingList(); renderRekapKehadiran(); renderStudentTable(); renderAttendanceFileCurrent(); renderAbsensiDokList(); }
       renderPenilaianCourseOptions();
       if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
       renderDocMatkulOptions();
@@ -2046,6 +2135,8 @@
     $("courseDetailTitle").textContent = course.nama;
     $("courseDetailSub").textContent = `${course.semester} · Tahun Ajaran ${course.tahunAjaran}`;
     renderRpsList();
+    renderKontrakList();
+    renderDokPdfList();
     renderMeetingList();
   }
 
@@ -2140,7 +2231,15 @@
     };
     await dbPut(record, COURSE_FILES_STORE);
     allCourseFiles.push(record);
-    if(meetingId){ renderMeetingList(); } else { renderRpsList(); }
+    if(meetingId){
+      renderMeetingList();
+    } else if(kind === "kontrak"){
+      renderKontrakList();
+    } else if(kind === "dokumen_pdf"){
+      renderDokPdfList();
+    } else {
+      renderRpsList();
+    }
     renderCourseList();
     toast(navigator.onLine ? "File disimpan, menyinkronkan…" : "File disimpan secara lokal (offline)");
     if(navigator.onLine && accessToken){ syncCourseFiles(); }
@@ -2148,6 +2247,8 @@
 
   const COURSE_FILE_KIND_FOLDER = {
     "rps": "RPS",
+    "kontrak": "Kontrak Kuliah",
+    "dokumen_pdf": "Dokumen Pendukung",
     "Materi Ajar": "Materi",
     "Slide": "Slide",
     "Foto Dokumentasi": "Foto Dokumentasi"
@@ -2203,8 +2304,20 @@
     }catch(e){ console.warn(e); }
     await dbDelete(id, COURSE_FILES_STORE);
     allCourseFiles = allCourseFiles.filter(x => x.id !== id);
-    if(f.meetingId){ renderMeetingList(); } else { renderRpsList(); }
+    refreshCourseFileListFor(f);
     toast("File dihapus");
+  }
+
+  function refreshCourseFileListFor(f){
+    if(f.meetingId){
+      renderMeetingList();
+    } else if(f.kind === "kontrak"){
+      renderKontrakList();
+    } else if(f.kind === "dokumen_pdf"){
+      renderDokPdfList();
+    } else {
+      renderRpsList();
+    }
   }
 
   async function downloadCourseFile(id){
@@ -2260,10 +2373,18 @@
         <span class="mf-actions">
           <button class="icon-btn" data-action="cf-open" data-id="${f.id}">Buka</button>
           <button class="icon-btn" data-action="cf-download" data-id="${f.id}">Unduh</button>
+          <button class="icon-btn" data-action="cf-edit" data-id="${f.id}">Edit</button>
           <button class="icon-btn" data-action="cf-delete" data-id="${f.id}" style="color:var(--danger)">Hapus</button>
         </span>
       </div>
     `;
+  }
+
+  function handleCourseFileAction(action, id){
+    if(action === "cf-open"){ openCourseFileInBrowser(id); }
+    if(action === "cf-download"){ downloadCourseFile(id); }
+    if(action === "cf-edit"){ openFileEditModal("course_files", id); }
+    if(action === "cf-delete"){ deleteCourseFile(id); }
   }
 
   function renderRpsList(){
@@ -2271,6 +2392,20 @@
     $("rpsList").innerHTML = files.length
       ? files.map(fileRowHtml).join("")
       : '<div class="empty-state" style="padding:10px 0;">Belum ada file RPS.</div>';
+  }
+
+  function renderKontrakList(){
+    const files = allCourseFiles.filter(f => f.courseId === activeCourseId && f.kind === "kontrak");
+    $("kontrakList").innerHTML = files.length
+      ? files.map(fileRowHtml).join("")
+      : '<div class="empty-state" style="padding:10px 0;">Belum ada file Kontrak Kuliah.</div>';
+  }
+
+  function renderDokPdfList(){
+    const files = allCourseFiles.filter(f => f.courseId === activeCourseId && f.kind === "dokumen_pdf");
+    $("dokPdfList").innerHTML = files.length
+      ? files.map(fileRowHtml).join("")
+      : '<div class="empty-state" style="padding:10px 0;">Belum ada dokumen pendukung.</div>';
   }
 
   function renderMeetingList(){
@@ -2362,17 +2497,25 @@
       materialTargetMeetingId = btn.dataset.meeting;
       $("materialUploadModal").classList.remove("hidden");
     }
-    if(action === "cf-open"){ openCourseFileInBrowser(btn.dataset.id); }
-    if(action === "cf-download"){ downloadCourseFile(btn.dataset.id); }
-    if(action === "cf-delete"){ deleteCourseFile(btn.dataset.id); }
+    handleCourseFileAction(action, btn.dataset.id);
   });
 
   $("rpsList").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
     if(!btn) return;
-    if(btn.dataset.action === "cf-open"){ openCourseFileInBrowser(btn.dataset.id); }
-    if(btn.dataset.action === "cf-download"){ downloadCourseFile(btn.dataset.id); }
-    if(btn.dataset.action === "cf-delete"){ deleteCourseFile(btn.dataset.id); }
+    handleCourseFileAction(btn.dataset.action, btn.dataset.id);
+  });
+
+  $("kontrakList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    handleCourseFileAction(btn.dataset.action, btn.dataset.id);
+  });
+
+  $("dokPdfList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    handleCourseFileAction(btn.dataset.action, btn.dataset.id);
   });
 
   // RPS drop/upload
@@ -2393,6 +2536,46 @@
     selectedRpsFile = null;
     $("rpsPicked").textContent = "";
     rpsInput.value = "";
+  });
+
+  // Kontrak Kuliah drop/upload
+  const kontrakDrop = $("kontrakDrop"), kontrakInput = $("kontrakInput");
+  kontrakDrop.addEventListener("click", () => kontrakInput.click());
+  kontrakDrop.addEventListener("dragover", (e) => { e.preventDefault(); kontrakDrop.classList.add("drag"); });
+  kontrakDrop.addEventListener("dragleave", () => kontrakDrop.classList.remove("drag"));
+  kontrakDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); kontrakDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){ selectedKontrakFile = e.dataTransfer.files[0]; $("kontrakPicked").textContent = selectedKontrakFile.name; }
+  });
+  kontrakInput.addEventListener("change", () => {
+    if(kontrakInput.files[0]){ selectedKontrakFile = kontrakInput.files[0]; $("kontrakPicked").textContent = selectedKontrakFile.name; }
+  });
+  $("kontrakUploadBtn").addEventListener("click", async () => {
+    if(!selectedKontrakFile){ toast("Pilih file Kontrak Kuliah dulu"); return; }
+    await addCourseFile("kontrak", null, selectedKontrakFile, selectedKontrakFile.name);
+    selectedKontrakFile = null;
+    $("kontrakPicked").textContent = "";
+    kontrakInput.value = "";
+  });
+
+  // Dokumen Pendukung (PDF) drop/upload
+  const dokPdfDrop = $("dokPdfDrop"), dokPdfInput = $("dokPdfInput");
+  dokPdfDrop.addEventListener("click", () => dokPdfInput.click());
+  dokPdfDrop.addEventListener("dragover", (e) => { e.preventDefault(); dokPdfDrop.classList.add("drag"); });
+  dokPdfDrop.addEventListener("dragleave", () => dokPdfDrop.classList.remove("drag"));
+  dokPdfDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); dokPdfDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){ selectedDokPdfFile = e.dataTransfer.files[0]; $("dokPdfPicked").textContent = selectedDokPdfFile.name; }
+  });
+  dokPdfInput.addEventListener("change", () => {
+    if(dokPdfInput.files[0]){ selectedDokPdfFile = dokPdfInput.files[0]; $("dokPdfPicked").textContent = selectedDokPdfFile.name; }
+  });
+  $("dokPdfUploadBtn").addEventListener("click", async () => {
+    if(!selectedDokPdfFile){ toast("Pilih file dokumen dulu"); return; }
+    await addCourseFile("dokumen_pdf", null, selectedDokPdfFile, selectedDokPdfFile.name);
+    selectedDokPdfFile = null;
+    $("dokPdfPicked").textContent = "";
+    dokPdfInput.value = "";
   });
 
   // Material (meeting file) drop/upload — modal
@@ -2659,6 +2842,7 @@
     $("absensiFillView").classList.add("hidden");
     updateAbsensiCourseBadge();
     renderStudentTable();
+    renderAbsensiDokList();
     renderAbsensiMeetingList();
     renderRekapKehadiran();
   });
@@ -2951,24 +3135,91 @@
     if(attendanceInput.files[0]){ processAttendanceFileUpload(attendanceInput.files[0]); attendanceInput.value = ""; }
   });
 
+  function attendanceFileRowHtml(f){
+    const badge = f.syncStatus === "synced"
+      ? '<span class="badge synced">Tersinkron</span>'
+      : '<span class="badge pending">Menunggu sync</span>';
+    return `
+      <div class="meeting-file-row" data-id="${f.id}">
+        <span class="mf-name">📎 ${escapeHtml(f.name)}</span>
+        ${badge}
+        <span class="mf-actions">
+          <button class="icon-btn" data-action="af-open" data-fileid="${f.id}">Buka</button>
+          <button class="icon-btn" data-action="af-download" data-fileid="${f.id}">Unduh</button>
+          <button class="icon-btn" data-action="af-edit" data-fileid="${f.id}">Edit</button>
+          <button class="icon-btn" data-action="af-delete" data-fileid="${f.id}" style="color:var(--danger)">Hapus</button>
+        </span>
+      </div>
+    `;
+  }
+
+  function refreshAttendanceFileListFor(f){
+    if(f.meetingId){ renderAttendanceFileCurrent(); } else { renderAbsensiDokList(); }
+  }
+
   function renderAttendanceFileCurrent(){
     const wrap = $("attendanceFileCurrentWrap");
     const file = allAttendanceFiles.find(f => f.meetingId === activeAbsensiMeetingId);
     if(!file){ wrap.innerHTML = ""; return; }
-    wrap.innerHTML = `
-      <div class="answer-file-row" style="font-size:12.5px;">
-        <span class="af-name">📎 ${escapeHtml(file.name)}</span>
-        <button type="button" data-action="open-attendance-file" data-fileid="${file.id}">Buka</button>
-        <button type="button" data-action="delete-attendance-file" data-fileid="${file.id}" style="color:var(--danger)">Hapus</button>
-      </div>
-    `;
+    wrap.innerHTML = attendanceFileRowHtml(file);
+  }
+
+  function renderAbsensiDokList(){
+    const files = allAttendanceFiles.filter(f => f.courseId === activeAbsensiCourseId && !f.meetingId);
+    $("absensiDokList").innerHTML = files.length
+      ? files.map(attendanceFileRowHtml).join("")
+      : '<div class="empty-state" style="padding:10px 0;">Belum ada dokumen absensi.</div>';
+  }
+
+  function handleAttendanceFileAction(action, fileId){
+    if(action === "af-open" || action === "open-attendance-file"){ openAttendanceFileInBrowser(fileId); }
+    if(action === "af-download"){ downloadAttendanceFile(fileId); }
+    if(action === "af-edit"){ openFileEditModal("attendance_files", fileId); }
+    if(action === "af-delete" || action === "delete-attendance-file"){ deleteAttendanceFile(fileId); }
   }
 
   $("attendanceFileCurrentWrap").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
     if(!btn) return;
-    if(btn.dataset.action === "open-attendance-file"){ openAttendanceFileInBrowser(btn.dataset.fileid); }
-    if(btn.dataset.action === "delete-attendance-file"){ deleteAttendanceFile(btn.dataset.fileid); }
+    handleAttendanceFileAction(btn.dataset.action, btn.dataset.fileid);
+  });
+
+  $("absensiDokList").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if(!btn) return;
+    handleAttendanceFileAction(btn.dataset.action, btn.dataset.fileid);
+  });
+
+  async function addAbsensiCourseDoc(courseId, file){
+    const record = {
+      id: uuid(), meetingId: null, courseId,
+      name: file.name, driveFileId: null, syncStatus: "local", blob: file
+    };
+    await dbPut(record, ATTENDANCE_FILES_STORE);
+    allAttendanceFiles.push(record);
+    renderAbsensiDokList();
+    toast(navigator.onLine ? "Dokumen absensi disimpan, menyinkronkan…" : "Dokumen absensi disimpan lokal (offline)");
+    if(navigator.onLine && accessToken){ syncAttendanceFiles(); }
+  }
+
+  const absensiDokDrop = $("absensiDokDrop"), absensiDokInput = $("absensiDokInput");
+  absensiDokDrop.addEventListener("click", () => absensiDokInput.click());
+  absensiDokDrop.addEventListener("dragover", (e) => { e.preventDefault(); absensiDokDrop.classList.add("drag"); });
+  absensiDokDrop.addEventListener("dragleave", () => absensiDokDrop.classList.remove("drag"));
+  absensiDokDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); absensiDokDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){ selectedAbsensiDokFile = e.dataTransfer.files[0]; $("absensiDokPicked").textContent = selectedAbsensiDokFile.name; }
+  });
+  absensiDokInput.addEventListener("change", () => {
+    if(absensiDokInput.files[0]){ selectedAbsensiDokFile = absensiDokInput.files[0]; $("absensiDokPicked").textContent = selectedAbsensiDokFile.name; }
+  });
+  $("absensiDokUploadBtn").addEventListener("click", async () => {
+    if(!activeAbsensiCourseId){ toast("Pilih mata kuliah dulu"); return; }
+    if(!selectedAbsensiDokFile){ toast("Pilih file dokumen absensi dulu"); return; }
+    await addAbsensiCourseDoc(activeAbsensiCourseId, selectedAbsensiDokFile);
+    selectedAbsensiDokFile = null;
+    $("absensiDokPicked").textContent = "";
+    absensiDokInput.value = "";
   });
 
   async function attachAttendanceFile(meetingId, courseId, file){
@@ -2993,13 +3244,13 @@
   async function deleteAttendanceFile(id){
     const f = allAttendanceFiles.find(x => x.id === id);
     if(!f) return;
-    if(!confirm(`Hapus lampiran "${f.name}"? (Status kehadiran yang sudah terisi tidak akan ikut terhapus)`)) return;
+    if(!confirm(`Hapus "${f.name}"? (Status kehadiran yang sudah terisi tidak akan ikut terhapus)`)) return;
     try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
     await dbDelete(id, ATTENDANCE_FILES_STORE);
     allAttendanceFiles = allAttendanceFiles.filter(x => x.id !== id);
-    renderAttendanceFileCurrent();
+    refreshAttendanceFileListFor(f);
     renderAbsensiMeetingList();
-    toast("Lampiran dihapus");
+    toast("Dokumen dihapus");
   }
 
   async function openAttendanceFileInBrowser(id){
@@ -3018,6 +3269,28 @@
     }catch(e){
       if(String(e.message).includes("AUTH_EXPIRED")) handleAuthExpired();
       else toast("Gagal membuka file");
+    }
+  }
+
+  async function downloadAttendanceFile(id){
+    const f = allAttendanceFiles.find(x => x.id === id);
+    if(!f) return;
+    try{
+      let blob = f.blob;
+      if(!blob){
+        if(!f.driveFileId || !navigator.onLine){ toast("File belum tersedia offline"); return; }
+        blob = await downloadBlobFromDrive(f.driveFileId);
+        f.blob = blob;
+        await dbPut(f, ATTENDANCE_FILES_STORE);
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = f.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")) handleAuthExpired();
+      else toast("Gagal mengunduh file");
     }
   }
 
@@ -3047,6 +3320,7 @@
         }
       }
       renderAttendanceFileCurrent();
+      renderAbsensiDokList();
       if(errors.length > 0){ toast(`Gagal sync ${errors.length} file absensi — ${errors[0]}`, 6000); }
     }catch(e){
       console.warn("syncAttendanceFiles gagal", e);
@@ -4722,6 +4996,25 @@
   });
 
   // ====== List rendering ======
+  async function openDocInBrowser(id){
+    const doc = allDocs.find(d => d.id === id);
+    if(!doc) return;
+    try{
+      let blob = doc.blob;
+      if(!blob){
+        if(!doc.driveFileId || !navigator.onLine){ toast("File belum tersedia offline, sambungkan internet dulu"); return; }
+        blob = await downloadBlobFromDrive(doc.driveFileId);
+        doc.blob = blob;
+        await dbPut(doc);
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }catch(err){
+      if(String(err.message).includes("AUTH_EXPIRED")) handleAuthExpired();
+      else toast("Gagal membuka file. Coba unduh saja.");
+    }
+  }
+
   function renderList(){
     const search = $("searchInput").value.trim().toLowerCase();
     const filterJenis = $("filterJenis").value;
@@ -4775,7 +5068,9 @@
           </div>
         </div>
         <div class="doc-actions">
+          <button class="icon-btn" data-action="open" data-id="${d.id}">Buka</button>
           <button class="icon-btn" data-action="download" data-id="${d.id}">Unduh</button>
+          <button class="icon-btn" data-action="edit" data-id="${d.id}">Edit</button>
           <button class="icon-btn" data-action="delete" data-id="${d.id}" style="color:var(--danger)">Hapus</button>
         </div>
       `;
@@ -4807,6 +5102,16 @@
     const id = btn.dataset.id;
     const doc = allDocs.find(d => d.id === id);
     if(!doc) return;
+
+    if(btn.dataset.action === "open"){
+      btn.disabled = true;
+      await openDocInBrowser(id);
+      btn.disabled = false;
+    }
+
+    if(btn.dataset.action === "edit"){
+      openFileEditModal("documents", id);
+    }
 
     if(btn.dataset.action === "download"){
       btn.disabled = true;
@@ -4893,6 +5198,118 @@
     await syncAllWorkMeta();
     renderList();
     toast("Sinkronisasi selesai");
+  });
+
+  // ====== Edit Dokumen (generic edit modal untuk semua jenis file) ======
+  function renderFileEditMatkulOptions(){
+    $("fileEditMatkul").innerHTML = $("docMatkul").innerHTML;
+  }
+  function renderFileEditJenisOptions(){
+    $("fileEditJenis").innerHTML = $("jenisDokumen").innerHTML;
+  }
+
+  function openFileEditModal(source, id){
+    let record;
+    if(source === "course_files") record = allCourseFiles.find(f => f.id === id);
+    else if(source === "attendance_files") record = allAttendanceFiles.find(f => f.id === id);
+    else record = allDocs.find(f => f.id === id);
+    if(!record){ toast("Dokumen tidak ditemukan"); return; }
+
+    fileEditContext = { source, id };
+    selectedFileEditReplacement = null;
+    $("fileEditName").value = record.name || "";
+    $("fileEditPicked").textContent = "";
+    $("fileEditInput").value = "";
+
+    if(source === "documents"){
+      $("fileEditExtraFields").classList.remove("hidden");
+      renderFileEditJenisOptions();
+      renderFileEditMatkulOptions();
+      $("fileEditJenis").value = record.jenis || "";
+      $("fileEditMatkul").value = record.matkulId || "";
+      $("fileEditSemester").value = record.semester || "";
+      $("fileEditCatatan").value = record.catatan || "";
+    } else {
+      $("fileEditExtraFields").classList.add("hidden");
+    }
+
+    $("fileEditModal").classList.remove("hidden");
+  }
+
+  function closeFileEditModal(){
+    $("fileEditModal").classList.add("hidden");
+    fileEditContext = null;
+    selectedFileEditReplacement = null;
+    $("fileEditPicked").textContent = "";
+    $("fileEditInput").value = "";
+  }
+
+  async function applyFileEditToRecord(record, storeName, newName){
+    record.name = newName;
+    if(selectedFileEditReplacement){
+      try{ if(record.driveFileId && navigator.onLine){ await trashFileInDrive(record.driveFileId); } }catch(e){ console.warn(e); }
+      record.blob = selectedFileEditReplacement;
+      record.driveFileId = null;
+      record.syncStatus = "local";
+    }
+    await dbPut(record, storeName);
+  }
+
+  const fileEditDrop = $("fileEditDrop"), fileEditInput = $("fileEditInput");
+  fileEditDrop.addEventListener("click", () => fileEditInput.click());
+  fileEditDrop.addEventListener("dragover", (e) => { e.preventDefault(); fileEditDrop.classList.add("drag"); });
+  fileEditDrop.addEventListener("dragleave", () => fileEditDrop.classList.remove("drag"));
+  fileEditDrop.addEventListener("drop", (e) => {
+    e.preventDefault(); fileEditDrop.classList.remove("drag");
+    if(e.dataTransfer.files[0]){
+      selectedFileEditReplacement = e.dataTransfer.files[0];
+      $("fileEditPicked").textContent = selectedFileEditReplacement.name;
+    }
+  });
+  fileEditInput.addEventListener("change", () => {
+    if(fileEditInput.files[0]){
+      selectedFileEditReplacement = fileEditInput.files[0];
+      $("fileEditPicked").textContent = selectedFileEditReplacement.name;
+    }
+  });
+
+  $("fileEditCancelBtn").addEventListener("click", closeFileEditModal);
+
+  $("fileEditSaveBtn").addEventListener("click", async () => {
+    if(!fileEditContext) return;
+    const { source, id } = fileEditContext;
+    const newName = $("fileEditName").value.trim();
+    if(!newName){ toast("Nama file tidak boleh kosong"); return; }
+
+    if(source === "course_files"){
+      const record = allCourseFiles.find(f => f.id === id);
+      if(!record){ closeFileEditModal(); return; }
+      await applyFileEditToRecord(record, COURSE_FILES_STORE, newName);
+      refreshCourseFileListFor(record);
+      if(navigator.onLine && accessToken){ syncCourseFiles(); }
+    } else if(source === "attendance_files"){
+      const record = allAttendanceFiles.find(f => f.id === id);
+      if(!record){ closeFileEditModal(); return; }
+      await applyFileEditToRecord(record, ATTENDANCE_FILES_STORE, newName);
+      refreshAttendanceFileListFor(record);
+      renderAbsensiMeetingList();
+      if(navigator.onLine && accessToken){ syncAttendanceFiles(); }
+    } else {
+      const record = allDocs.find(f => f.id === id);
+      if(!record){ closeFileEditModal(); return; }
+      record.jenis = $("fileEditJenis").value;
+      record.matkulId = $("fileEditMatkul").value || null;
+      record.semester = $("fileEditSemester").value.trim();
+      record.catatan = $("fileEditCatatan").value.trim();
+      if(selectedFileEditReplacement){ record.syncStatus = "local"; }
+      await applyFileEditToRecord(record, STORE, newName);
+      renderList();
+      updateSyncBadge();
+      if(navigator.onLine && accessToken){ attemptAutoSync(); }
+    }
+
+    toast("Perubahan disimpan");
+    closeFileEditModal();
   });
 
   // ====== Init ======
