@@ -1233,7 +1233,7 @@
   const SCOPES = "https://www.googleapis.com/auth/drive.file email profile";
   const ROOT_FOLDER_NAME = "BKD Dosen";
   const DB_NAME = "bkd_dosen_db";
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   const STORE = "documents";
   const COURSES_STORE = "courses";
   const MEETINGS_STORE = "meetings";
@@ -1245,6 +1245,7 @@
   const WORK_ITEMS_STORE = "work_items";
   const WORK_FILES_STORE = "work_files";
   const ATTENDANCE_FILES_STORE = "attendance_files"; // file absensi asli (PDF/Word/Excel) per pertemuan
+  const DELETED_STORE = "deleted_ids"; // "tombstone": catatan permanen ID/driveFileId yang sengaja dihapus, supaya tidak tertarik lagi saat sync
 
   const CATEGORY_STORAGE_KEY = "bkd_categories";
   const DEFAULT_CATEGORIES = [
@@ -1297,6 +1298,9 @@
   let selectedAbsensiDokFile = null;
   let fileEditContext = null; // { source: 'course_files' | 'attendance_files' | 'documents', id }
   let selectedFileEditReplacement = null;
+  let deletedIds = new Set(); // tombstone: kumpulan id record / driveFileId yang sengaja dihapus
+  let deletedIndexFileId = localStorage.getItem("bkd_deleted_index_file_id") || null;
+  if(deletedIndexFileId === "undefined" || deletedIndexFileId === "null"){ deletedIndexFileId = null; localStorage.removeItem("bkd_deleted_index_file_id"); }
 
   // ====== DOM helpers ======
   const $ = (id) => document.getElementById(id);
@@ -1358,6 +1362,9 @@
           const s = _db.createObjectStore(WORK_FILES_STORE, { keyPath: "id" });
           s.createIndex("workItemId", "workItemId", { unique:false });
         }
+        if(!_db.objectStoreNames.contains(DELETED_STORE)){
+          _db.createObjectStore(DELETED_STORE, { keyPath: "id" });
+        }
       };
       req.onsuccess = (e) => resolve(e.target.result);
       req.onerror = (e) => reject(e.target.error);
@@ -1390,6 +1397,147 @@
 
   function uuid(){
     return "d-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,9);
+  }
+
+  // ====== Tombstone / Daftar Terhapus ======
+  // Mencatat permanen ID record (untuk data yang ID-nya sama di semua perangkat, misal
+  // pertemuan/ujian/pekerjaan/mata kuliah) dan driveFileId (untuk file yang ID lokalnya
+  // dibuat ulang di tiap perangkat saat ditarik dari Drive, misal dokumen/RPS/lampiran).
+  // Tujuannya: begitu sesuatu dihapus, ia tidak akan pernah ditarik/tersinkron ulang oleh
+  // proses sync — baik di perangkat yang sama (kalau trash ke Drive sempat gagal) maupun
+  // di perangkat lain yang belum tahu soal penghapusan itu.
+  async function loadDeletedIdsLocal(){
+    try{
+      const rows = await dbGetAll(DELETED_STORE);
+      deletedIds = new Set(rows.map(r => r.id));
+    }catch(e){ console.warn("Gagal memuat daftar terhapus lokal", e); }
+  }
+
+  async function markDeleted(id){
+    if(!id || deletedIds.has(id)) return;
+    deletedIds.add(id);
+    try{ await dbPut({ id, deletedAt: Date.now() }, DELETED_STORE); }catch(e){ console.warn(e); }
+    if(navigator.onLine && accessToken){ syncDeletedIdsToDrive(); }
+  }
+
+  async function syncDeletedIdsToDrive(){
+    if(!accessToken || !navigator.onLine) return;
+    try{
+      await ensureRootFolder();
+      const blob = new Blob([JSON.stringify(Array.from(deletedIds))], { type: "application/json" });
+      if(!deletedIndexFileId){
+        const all = await listAllAppFiles();
+        const existing = all.find(f => (f.properties||{}).kind === "deleted_index");
+        if(existing) deletedIndexFileId = existing.id;
+      }
+      if(deletedIndexFileId){
+        await updateFileContentInDrive(deletedIndexFileId, blob);
+      } else {
+        deletedIndexFileId = await uploadBlobToDrive(blob, "_deleted_ids.json", rootFolderId, { kind: "deleted_index" });
+      }
+      localStorage.setItem("bkd_deleted_index_file_id", deletedIndexFileId);
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
+      console.warn("Gagal sinkron daftar dokumen terhapus", e);
+    }
+  }
+
+  async function pullDeletedIdsFromDrive(){
+    if(!accessToken || !navigator.onLine) return;
+    try{
+      await ensureRootFolder();
+      const all = await listAllAppFiles();
+      const existing = all.find(f => (f.properties||{}).kind === "deleted_index");
+      if(!existing) return;
+      deletedIndexFileId = existing.id;
+      localStorage.setItem("bkd_deleted_index_file_id", deletedIndexFileId);
+
+      const blob = await downloadBlobFromDrive(existing.id);
+      let remoteIds = [];
+      try{ remoteIds = JSON.parse(await blob.text()); }catch(e){ remoteIds = []; }
+
+      let hasNewFromRemote = false;
+      for(const rid of remoteIds){
+        if(!deletedIds.has(rid)){
+          deletedIds.add(rid);
+          await dbPut({ id: rid, deletedAt: Date.now() }, DELETED_STORE);
+          hasNewFromRemote = true;
+        }
+      }
+      // Kalau kita punya tombstone lokal yang belum ada di file Drive (misal habis hapus
+      // saat offline lalu baru online lagi), upload gabungannya balik ke Drive.
+      if(deletedIds.size > remoteIds.length){
+        await syncDeletedIdsToDrive();
+      }
+      if(hasNewFromRemote){
+        await purgeDeletedFromLocalStores();
+      }
+    }catch(e){
+      if(String(e.message).includes("AUTH_EXPIRED")){ handleAuthExpired(); return; }
+      console.warn("Gagal menarik daftar dokumen terhapus dari Drive", e);
+    }
+  }
+
+  // Membersihkan record lokal (di perangkat ini) yang ternyata sudah dihapus di tempat lain,
+  // supaya semua perangkat pada akhirnya menampilkan data yang sama.
+  async function purgeDeletedFromLocalStores(){
+    let touchedDocs = false, touchedCourseFiles = false, touchedAttFiles = false,
+        touchedAssessFiles = false, touchedWorkFiles = false, touchedMeetings = false,
+        touchedAssessments = false, touchedWorkItems = false, touchedCourses = false;
+
+    const isGone = (rec) => deletedIds.has(rec.id) || (rec.driveFileId && deletedIds.has(rec.driveFileId));
+
+    const docsGone = allDocs.filter(isGone);
+    for(const d of docsGone){ await dbDelete(d.id, STORE); }
+    if(docsGone.length){ allDocs = allDocs.filter(d => !docsGone.includes(d)); touchedDocs = true; }
+
+    const cfGone = allCourseFiles.filter(isGone);
+    for(const f of cfGone){ await dbDelete(f.id, COURSE_FILES_STORE); }
+    if(cfGone.length){ allCourseFiles = allCourseFiles.filter(f => !cfGone.includes(f)); touchedCourseFiles = true; }
+
+    const afGone = allAttendanceFiles.filter(isGone);
+    for(const f of afGone){ await dbDelete(f.id, ATTENDANCE_FILES_STORE); }
+    if(afGone.length){ allAttendanceFiles = allAttendanceFiles.filter(f => !afGone.includes(f)); touchedAttFiles = true; }
+
+    const asfGone = allAssessmentFiles.filter(isGone);
+    for(const f of asfGone){ await dbDelete(f.id, ASSESSMENT_FILES_STORE); }
+    if(asfGone.length){ allAssessmentFiles = allAssessmentFiles.filter(f => !asfGone.includes(f)); touchedAssessFiles = true; }
+
+    const wfGone = allWorkFiles.filter(isGone);
+    for(const f of wfGone){ await dbDelete(f.id, WORK_FILES_STORE); }
+    if(wfGone.length){ allWorkFiles = allWorkFiles.filter(f => !wfGone.includes(f)); touchedWorkFiles = true; }
+
+    const meetingsGone = allMeetings.filter(m => deletedIds.has(m.id));
+    for(const m of meetingsGone){ await dbDelete(m.id, MEETINGS_STORE); }
+    if(meetingsGone.length){ allMeetings = allMeetings.filter(m => !meetingsGone.includes(m)); touchedMeetings = true; }
+
+    const assessmentsGone = allAssessments.filter(a => deletedIds.has(a.id));
+    for(const a of assessmentsGone){ await dbDelete(a.id, ASSESSMENTS_STORE); }
+    if(assessmentsGone.length){ allAssessments = allAssessments.filter(a => !assessmentsGone.includes(a)); touchedAssessments = true; }
+
+    const workItemsGone = allWorkItems.filter(w => deletedIds.has(w.id));
+    for(const w of workItemsGone){ await dbDelete(w.id, WORK_ITEMS_STORE); }
+    if(workItemsGone.length){ allWorkItems = allWorkItems.filter(w => !workItemsGone.includes(w)); touchedWorkItems = true; }
+
+    const coursesGone = allCourses.filter(c => deletedIds.has(c.id));
+    for(const c of coursesGone){ await dbDelete(c.id, COURSES_STORE); }
+    if(coursesGone.length){ allCourses = allCourses.filter(c => !coursesGone.includes(c)); touchedCourses = true; }
+
+    if(touchedDocs){ renderList(); updateSyncBadge(); }
+    if(touchedCourses || touchedCourseFiles || touchedMeetings){
+      renderCourseList();
+      if(activeCourseId){ renderRpsList(); renderKontrakList(); renderDokPdfList(); renderMeetingList(); }
+    }
+    if(touchedCourses || touchedAttFiles || touchedMeetings){
+      renderAbsensiCourseOptions();
+      if(activeAbsensiCourseId){ renderAbsensiMeetingList(); renderRekapKehadiran(); renderAbsensiDokList(); renderAttendanceFileCurrent(); }
+    }
+    if(touchedCourses || touchedAssessments || touchedAssessFiles){
+      renderPenilaianCourseOptions();
+      if(activePenilaianCourseId){ renderAssessmentList(); renderRekapPenilaian(); }
+    }
+    if(touchedDocs || touchedCourses){ renderDocMatkulOptions(); }
+    if(touchedWorkItems || touchedWorkFiles){ renderWorkList(); updateDeadlineBanner(); }
   }
 
   // ====== Category management ======
@@ -1475,7 +1623,7 @@
     const online = navigator.onLine;
     $("netDot").className = "dot " + (online ? "online" : "offline");
     $("netLabel").textContent = online ? "Online" : "Offline";
-    if(online && accessToken){ attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAttendanceFiles(); syncWorkFiles(); syncAllCourseMeta(); syncAllWorkMeta(); pullMataKuliahFromDrive(); pullWorkItemsFromDrive(); }
+    if(online && accessToken){ pullDeletedIdsFromDrive().then(() => { attemptAutoSync(); syncCourseFiles(); syncAssessmentFiles(); syncAttendanceFiles(); syncWorkFiles(); syncAllCourseMeta(); syncAllWorkMeta(); pullMataKuliahFromDrive(); pullWorkItemsFromDrive(); }); }
   }
   window.addEventListener("online", updateNetStatus);
   window.addEventListener("offline", updateNetStatus);
@@ -1555,6 +1703,7 @@
       toast(`Gagal menyiapkan folder Drive: ${e.message}`, 7000);
     }
 
+    await pullDeletedIdsFromDrive();
     await pullFromDrive();
     await pullMataKuliahFromDrive();
     await pullWorkItemsFromDrive();
@@ -1859,13 +2008,14 @@
       });
 
       // 1) Metadata mata kuliah (nama, pertemuan, mahasiswa)
-      const metaFiles = files.filter(f => (f.properties || {}).kind === "course_meta");
+      const metaFiles = files.filter(f => (f.properties || {}).kind === "course_meta" && !deletedIds.has(f.id));
       for(const mf of metaFiles){
         let payload;
         try{
           const blob = await downloadBlobFromDrive(mf.id);
           payload = JSON.parse(await blob.text());
         }catch(e){ continue; }
+        if(deletedIds.has(payload.course.id)) continue;
 
         let course = allCourses.find(c => c.id === payload.course.id);
         if(!course){
@@ -1878,6 +2028,7 @@
         }
 
         for(const m of (payload.meetings || [])){
+          if(deletedIds.has(m.id)) continue;
           if(!allMeetings.some(x => x.id === m.id)){
             const meeting = { id: m.id, courseId: course.id, pertemuanKe: m.pertemuanKe, tanggal: m.tanggal };
             await dbPut(meeting, MEETINGS_STORE);
@@ -1903,6 +2054,7 @@
         }
 
         for(const asm of (payload.assessments || [])){
+          if(deletedIds.has(asm.id)) continue;
           if(!allAssessments.some(x => x.id === asm.id)){
             const record = { ...asm, courseId: course.id };
             await dbPut(record, ASSESSMENTS_STORE);
@@ -1919,6 +2071,7 @@
       const existingDriveIds = new Set(allCourseFiles.map(f => f.driveFileId).filter(Boolean));
       for(const f of courseFileEntries){
         if(existingDriveIds.has(f.id)) continue;
+        if(deletedIds.has(f.id)) continue;
         const props = f.properties || {};
         const record = {
           id: uuid(),
@@ -1940,6 +2093,7 @@
       const existingAttFileDriveIds = new Set(allAttendanceFiles.map(f => f.driveFileId).filter(Boolean));
       for(const f of attendanceFileEntries){
         if(existingAttFileDriveIds.has(f.id)) continue;
+        if(deletedIds.has(f.id)) continue;
         const props = f.properties || {};
         const record = {
           id: uuid(),
@@ -1959,6 +2113,7 @@
       const existingAnswerDriveIds = new Set(allAssessmentFiles.map(f => f.driveFileId).filter(Boolean));
       for(const f of answerFileEntries){
         if(existingAnswerDriveIds.has(f.id)) continue;
+        if(deletedIds.has(f.id)) continue;
         const props = f.properties || {};
         const record = {
           id: uuid(),
@@ -2086,17 +2241,21 @@
 
     for(const f of filesOfCourse){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, COURSE_FILES_STORE);
     }
     try{ if(course.metaDriveFileId && navigator.onLine){ await trashFileInDrive(course.metaDriveFileId); } }catch(e){}
-    for(const m of meetingsOfCourse){ await dbDelete(m.id, MEETINGS_STORE); }
+    if(course.metaDriveFileId){ await markDeleted(course.metaDriveFileId); }
+    for(const m of meetingsOfCourse){ await markDeleted(m.id); await dbDelete(m.id, MEETINGS_STORE); }
     for(const s of studentsOfCourse){ await dbDelete(s.id, STUDENTS_STORE); }
     for(const a of attendanceOfCourse){ await dbDelete(a.id, ATTENDANCE_STORE); }
-    for(const a of assessmentsOfCourse){ await dbDelete(a.id, ASSESSMENTS_STORE); }
+    for(const a of assessmentsOfCourse){ await markDeleted(a.id); await dbDelete(a.id, ASSESSMENTS_STORE); }
     for(const f of attendanceFilesOfCourse){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, ATTENDANCE_FILES_STORE);
     }
+    await markDeleted(id);
     await dbDelete(id, COURSES_STORE);
 
     allCourses = allCourses.filter(c => c.id !== id);
@@ -2302,6 +2461,7 @@
     try{
       if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); }
     }catch(e){ console.warn(e); }
+    if(f.driveFileId){ await markDeleted(f.driveFileId); }
     await dbDelete(id, COURSE_FILES_STORE);
     allCourseFiles = allCourseFiles.filter(x => x.id !== id);
     refreshCourseFileListFor(f);
@@ -2466,6 +2626,7 @@
     const files = allCourseFiles.filter(f => f.meetingId === id);
     for(const f of files){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, COURSE_FILES_STORE);
     }
     const attOfMeeting = allAttendance.filter(a => a.meetingId === id);
@@ -2475,9 +2636,11 @@
     const attFilesOfMeeting = allAttendanceFiles.filter(f => f.meetingId === id);
     for(const f of attFilesOfMeeting){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, ATTENDANCE_FILES_STORE);
     }
     allAttendanceFiles = allAttendanceFiles.filter(f => f.meetingId !== id);
+    await markDeleted(id);
     await dbDelete(id, MEETINGS_STORE);
     allMeetings = allMeetings.filter(m => m.id !== id);
     renderMeetingList();
@@ -3246,6 +3409,7 @@
     if(!f) return;
     if(!confirm(`Hapus "${f.name}"? (Status kehadiran yang sudah terisi tidak akan ikut terhapus)`)) return;
     try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+    if(f.driveFileId){ await markDeleted(f.driveFileId); }
     await dbDelete(id, ATTENDANCE_FILES_STORE);
     allAttendanceFiles = allAttendanceFiles.filter(x => x.id !== id);
     refreshAttendanceFileListFor(f);
@@ -3631,9 +3795,11 @@
     const relatedFiles = allAssessmentFiles.filter(f => f.assessmentId === id);
     for(const f of relatedFiles){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, ASSESSMENT_FILES_STORE);
     }
     allAssessmentFiles = allAssessmentFiles.filter(f => f.assessmentId !== id);
+    await markDeleted(id);
     await dbDelete(id, ASSESSMENTS_STORE);
     allAssessments = allAssessments.filter(x => x.id !== id);
     if(activeAssessmentId === id){
@@ -4029,6 +4195,7 @@
     if(!f) return;
     if(!confirm(`Hapus lampiran "${f.name}"?`)) return;
     try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+    if(f.driveFileId){ await markDeleted(f.driveFileId); }
     await dbDelete(id, ASSESSMENT_FILES_STORE);
     allAssessmentFiles = allAssessmentFiles.filter(x => x.id !== id);
     renderScoreTable();
@@ -4283,10 +4450,13 @@
     const relatedFiles = allWorkFiles.filter(f => f.workItemId === id);
     for(const f of relatedFiles){
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, WORK_FILES_STORE);
     }
     allWorkFiles = allWorkFiles.filter(f => f.workItemId !== id);
     try{ if(item.metaDriveFileId && navigator.onLine){ await trashFileInDrive(item.metaDriveFileId); } }catch(e){}
+    if(item.metaDriveFileId){ await markDeleted(item.metaDriveFileId); }
+    await markDeleted(id);
     await dbDelete(id, WORK_ITEMS_STORE);
     allWorkItems = allWorkItems.filter(x => x.id !== id);
     if(activeWorkItemId === id){
@@ -4505,6 +4675,7 @@
     if(btn.dataset.action === "wf-delete"){
       if(!confirm(`Hapus file "${f.name}"?`)) return;
       try{ if(f.driveFileId && navigator.onLine){ await trashFileInDrive(f.driveFileId); } }catch(e){}
+      if(f.driveFileId){ await markDeleted(f.driveFileId); }
       await dbDelete(f.id, WORK_FILES_STORE);
       allWorkFiles = allWorkFiles.filter(x => x.id !== f.id);
       renderWorkFiles();
@@ -4572,13 +4743,14 @@
     if(!accessToken || !navigator.onLine) return;
     try{
       const allFiles = await listAllAppFiles();
-      const metaFiles = allFiles.filter(f => (f.properties||{}).recordType === "work_meta");
+      const metaFiles = allFiles.filter(f => (f.properties||{}).recordType === "work_meta" && !deletedIds.has(f.id));
       for(const mf of metaFiles){
         let payload;
         try{
           const blob = await downloadBlobFromDrive(mf.id);
           payload = JSON.parse(await blob.text());
         }catch(e){ continue; }
+        if(deletedIds.has(payload.id)) continue;
         let item = allWorkItems.find(x => x.id === payload.id);
         if(!item){
           item = { ...payload, metaDriveFileId: mf.id };
@@ -4593,6 +4765,7 @@
       const existingDriveIds = new Set(allWorkFiles.map(f => f.driveFileId).filter(Boolean));
       for(const f of workFileEntries){
         if(existingDriveIds.has(f.id)) continue;
+        if(deletedIds.has(f.id)) continue;
         const props = f.properties || {};
         const record = {
           id: uuid(), workItemId: props.workItemId || null, name: f.name,
@@ -4855,6 +5028,7 @@
       const existingIds = new Set(allDocs.map(d => d.driveFileId).filter(Boolean));
       for(const f of files){
         if(existingIds.has(f.id)) continue;
+        if(deletedIds.has(f.id)) continue;
         const props = f.properties || {};
         const doc = {
           id: uuid(),
@@ -5150,6 +5324,7 @@
       }catch(err){
         console.warn("Gagal hapus dari Drive", err);
       }
+      if(doc.driveFileId){ await markDeleted(doc.driveFileId); }
       await dbDelete(id);
       allDocs = await dbGetAll();
       renderList();
@@ -5185,6 +5360,7 @@
   $("syncBtn").addEventListener("click", async () => {
     if(!navigator.onLine){ toast("Tidak ada koneksi internet"); return; }
     toast("Menyinkronkan…");
+    await pullDeletedIdsFromDrive();
     await pullFromDrive();
     await pullMataKuliahFromDrive();
     await pullWorkItemsFromDrive();
@@ -5326,6 +5502,7 @@
     renderCategoryChips();
     renderJenisSelectOptions();
     db = await openDB();
+    await loadDeletedIdsLocal();
     allDocs = await dbGetAll();
     renderList();
     updateSyncBadge();
